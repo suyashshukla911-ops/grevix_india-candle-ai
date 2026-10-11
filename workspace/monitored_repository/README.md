@@ -1,1 +1,1 @@
-# Monitored repository sample
+# Monitored model environment

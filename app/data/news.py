@@ -1,11 +1,9 @@
-
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from typing import Any
-
-import requests
 
 POSITIVE = {
     "growth","profit","profits","surge","rise","rises","rising","gain","gains",
@@ -22,8 +20,7 @@ NEGATIVE = {
 
 class NewsService:
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "IndiaCandleAI/TrustGraph"})
+        self._cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
     @staticmethod
     def score_text(text: str) -> float:
@@ -34,6 +31,11 @@ class NewsService:
         return 0.0 if total == 0 else (pos - neg) / total
 
     def fetch(self, symbol: str, company_name: str, limit: int = 8) -> list[dict[str, Any]]:
+        key = f"{symbol}|{company_name}"
+        now = time.time()
+        hit = self._cache.get(key)
+        if hit and now - hit[0] < 300:
+            return hit[1][:limit]
         items: list[dict[str, Any]] = []
         try:
             import yfinance as yf
@@ -47,30 +49,24 @@ class NewsService:
                 score = self.score_text(title)
                 items.append({
                     "title": title,
-                    "publisher": content.get("provider", {}).get("displayName") if isinstance(content.get("provider"), dict) else item.get("publisher", "Yahoo Finance"),
+                    "publisher": content.get("provider", {}).get("displayName") if isinstance(content.get("provider"), dict) else item.get("publisher", ""),
                     "url": (content.get("canonicalUrl") or {}).get("url") if isinstance(content.get("canonicalUrl"), dict) else item.get("link", ""),
                     "published": content.get("pubDate") or item.get("providerPublishTime"),
-                    "sentiment": round(score, 3),
-                    "impact": round(score, 3),
+                    "sentiment": round(score, 3), "impact": round(score, 3),
                 })
         except Exception:
-            pass
+            items = []
         if not items:
-            # Deterministic, clearly labeled local context. It is not presented as live news.
-            items = [
-                {"title": f"{company_name}: local market context available", "publisher": "Local fallback",
-                 "url": "", "published": datetime.now().isoformat(), "sentiment": 0.0, "impact": 0.0},
-            ]
-        return items
+            items = [{"title": f"No live news context available for {company_name}.", "publisher": "",
+                      "url": "", "published": datetime.now().isoformat(), "sentiment": 0.0, "impact": 0.0}]
+        self._cache[key] = (now, items)
+        return items[:limit]
 
     def aggregate(self, articles: list[dict[str, Any]]) -> dict[str, Any]:
         scores = [float(x.get("sentiment", 0.0)) for x in articles]
         impact = sum(scores) / max(len(scores), 1)
         return {
-            "headline_count": len(articles),
-            "positive": sum(1 for x in scores if x > 0.15),
-            "negative": sum(1 for x in scores if x < -0.15),
-            "neutral": sum(1 for x in scores if -0.15 <= x <= 0.15),
+            "headline_count": len(articles), "positive": sum(1 for x in scores if x > 0.15),
+            "negative": sum(1 for x in scores if x < -0.15), "neutral": sum(1 for x in scores if -0.15 <= x <= 0.15),
             "impact": round(max(-1.0, min(1.0, impact)), 3),
-            "source": "Yahoo Finance when available; local fallback otherwise",
         }

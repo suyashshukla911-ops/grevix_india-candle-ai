@@ -1,41 +1,62 @@
-# India Candle AI — TrustGraph
+# India Candle AI
 
-A competition-ready evolution of the original India Candle AI stock predictor.
+India Candle AI is a working stock-analysis prototype adapted for the AfterCode **Missing Update Window** challenge. The core product remains market prediction; the adaptation adds an environment-aware trust chain around the prediction.
 
-## What stayed
-The original product goal remains: estimate short-horizon Indian-stock movement from historical market data and present a BUY / SELL / NO-TRADE decision for paper analysis.
+## Core market product
 
-The original Tkinter implementation is preserved under `legacy_original/` and is not used by the web application.
+- Searchable Indian listed-security universe (NSE equity + NSE SME + BSE active-equity discovery when reachable; public symbol/name resolution is extended with Yahoo search).
+- Yahoo Finance market-data adapter with structured chart/history retrieval, in-memory + disk cache, and `.NS` / `.BO` resolution.
+- Timeframes: 5m, 15m, 30m, 60m and 1d.
+- Feature engineering: returns, candle structure, ATR, RSI, EMA structure, MACD, Bollinger position, volatility, volume, VWAP and session context.
+- Chronological validation rather than random time-series shuffling.
+- Automatic threshold optimization subject to a **90% selective-signal precision gate**.
+- Market-regime detection, deterministic explainability, risk engine, historical backtest and buy-and-hold comparison.
+- Model caching/versioning, environment-aware retraining, signal journal and watchlist.
+- Market-data freshness is evaluated separately from repository freshness.
 
-## What changed for AfterCode
-The product now asks two questions:
+## TrustGraph adaptation
 
-1. What does the model predict?
-2. Can the environment that produced the prediction still be trusted?
+The application has one coherent trust decision:
 
-The answer is governed by **TrustGraph**.
+```text
+Market data freshness
+        +
+Model validation / 90% gate
+        +
+Market regime / volatility
+        +
+Repository freshness (when model-bound)
+        +
+Security / dependency state
+        ↓
+     TRUSTGRAPH
+        ↓
+BUY / SELL / HOLD / REVALIDATE
+```
 
-### TrustGraph gates
-- Market data freshness
-- Model validation / 90% selective-signal precision gate
-- Repository freshness
-- Dependency changes
-- Security / code-quality state
+A BUY/SELL signal is not presented as trusted when the model-quality gate fails, market data is stale, or the model-bound repository is stale. The system deliberately abstains instead of inventing confidence. When a prediction-affecting code/dependency component changes and the new baseline is accepted, the model cache is invalidated by a prediction-environment fingerprint and the next analysis retrains.
 
-A qualifying signal is `BUY` or `SELL`. If the model evidence is weak, the system returns `NO-TRADE`. If the data or repository is stale, it returns `REVALIDATE`.
+## Repository Health: what Clone & Monitor actually does
 
-## Yahoo Finance without an API key
-The live provider tries:
-1. `yfinance`
-2. Yahoo chart/search HTTP endpoints
-3. local disk cache
-4. deterministic local demo fallback
+Repository Health is **generic**. It is not limited to stock-market repositories.
 
-The application does not scrape Yahoo HTML pages to discover symbols. The search layer uses Yahoo's query endpoint and the chart layer uses structured market data. The user can type many NSE/BSE tickers; the resolver tries `.NS` and `.BO`.
+1. Clone any public GitHub repository into an isolated local snapshot.
+2. Create an accepted baseline consisting of the repository fingerprint, file manifest, component fingerprints, dependency state and accepted security findings.
+3. Check or refresh the repository later.
+4. Detect added, modified and removed files, dependency changes, security/code-quality findings and change impact.
+5. Decide whether revalidation is audit-only, targeted, model+data, or full.
+6. Keep an audit trail of source changes, scans and accepted baselines.
+7. Only when the user explicitly binds an audited repository to model trust does repository state gate stock predictions.
 
-For the competition, the local fallback guarantees that the system remains demonstrable without a live Yahoo session.
+The application never executes the monitored repository code.
 
-## Start
+## Live market data
+
+The competition build uses live/cached market data and does not depend on an application API key. If a Yahoo Finance request fails, the UI reports that market history is unavailable or cached; it does not label the product as a demo. An explicit offline fallback can be enabled for testing with `ALLOW_FALLBACK=true`, but it is disabled by default.
+
+The directory is intentionally broader than a fixed watchlist: search and Browse Directory use the refreshed exchange universe, including small/SME names when the exchange catalogue is reachable. Not every listed security necessarily has intraday history available from the market-data provider. The directory can therefore contain a security that is selectable but whose requested 5m/15m history is unavailable. The application reports that condition instead of silently changing the timeframe.
+
+## Run
 
 ```powershell
 python -m venv .venv
@@ -47,47 +68,17 @@ python -m uvicorn app.main:app
 
 Open `http://127.0.0.1:8000`.
 
-Use **`python -m uvicorn app.main:app`** for judging. No `--reload` is needed.
+For judging, use the command above without `--reload`.
 
-## Main demo
-1. Market Predictor → choose `TCS` / `60m` or `RELIANCE` / `15m`.
-2. `ANALYZE STOCK`.
-3. Show prediction, confidence, validation gate, regime, backtest.
-4. TrustGraph tab → show the individual evidence gates.
-5. Repository Health → `SCAN & ACCEPT BASELINE`.
-6. `SIMULATE OVERNIGHT UPDATE`.
-7. The repository becomes `STALE`.
-8. Return to Market Predictor and analyze again → trusted signal becomes `REVALIDATE`.
-9. Repository Health → `SCAN & ACCEPT BASELINE`.
-10. Analyze again → the current environment can become trusted if the 90% model gate passes.
+## Recommended judging flow
 
-## Repository modes
-- Local monitored repository (default)
-- Public GitHub repository clone without an API key
-- Optional future GitHub push webhook boundary
+1. Search any stock, choose 5m/15m/30m/60m/1d and run **ANALYZE STOCK**.
+2. Explain the validation gate, confidence, regime, risk and backtest.
+3. Open **Repository Health** and explain that the repository scanner is generic.
+4. Clone any public GitHub repository and show **EXTERNAL AUDIT**.
+5. Accept its baseline, modify/refresh it, and show change impact, dependency/security state and revalidation depth.
+6. For the actual model environment, return to the model workspace, accept a baseline, simulate an overnight update and show `STALE → REVALIDATE → CURRENT`.
 
-The application never executes the monitored repository code. It only reads and fingerprints it.
+## Safety / scope
 
-## Additional capabilities
-- automatic threshold optimization
-- market-regime detection
-- deterministic explainability
-- validation-window backtest
-- signal journal
-- model versioning
-- data freshness
-- component fingerprints
-- change-impact analysis
-- overnight change report
-- security score
-- audit trail
-- optional local `bandit` / `pip-audit` integration hooks if those tools are installed
-
-## Disclaimer
-Paper analysis only. No orders are placed. No prediction metric is a guarantee of future profit.
-
-## Production-direction hooks
-- Optional Basic Auth can be enabled with `DEMO_AUTH_ENABLED=true`.
-- `POST /api/webhook/github` accepts GitHub push/ping events; when `GITHUB_WEBHOOK_SECRET` is set, HMAC SHA-256 is verified.
-- If `bandit` is installed locally, repository scanning imports its findings.
-- If `pip-audit` is installed locally, dependency vulnerabilities are imported.
+Paper analysis only. No orders are placed. A validation precision gate is a quality control, not a guarantee of future returns.

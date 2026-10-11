@@ -19,12 +19,13 @@ def candles(n=1500):
 def test_model_fit_predict():
     frame=prepare_training_frame(candles())
     model=CandleModel(min_train_rows=240)
-    report=model.fit(frame,FEATURES,dataset_fingerprint="test")
+    report=model.fit(frame,FEATURES,dataset_fingerprint="test", environment_fingerprint="env-a")
     result=model.predict(frame.iloc[[-1]],float(frame.close.iloc[-1]),0.0,
                          {"regime":"TRENDING UP","volatility":"NORMAL","momentum":"POSITIVE"},
                          repo_current=True,data_current=True)
     assert report.model_version.startswith("v")
-    assert result["signal"] in {"BUY","SELL","NO-TRADE","REVALIDATE"}
+    assert report.environment_fingerprint == "env-a"
+    assert result["signal"] in {"BUY","SELL","HOLD","REVALIDATE"}
     assert "backtest" in result
 
 def test_threshold_gate_is_explicit():

@@ -7,7 +7,7 @@ Implemented in this build:
 3. Cached model reuse and persisted `joblib` models.
 4. Yahoo structured data adapter with NSE/BSE resolution.
 5. Yahoo symbol search for many tickers.
-6. Disk cache and deterministic local fallback.
+6. Disk cache with explicit offline fallback switch.
 7. Yahoo outage circuit breaker to prevent repeated lag.
 8. Technical feature expansion: RSI, ATR, EMAs, MACD, Bollinger position, VWAP, volume z-score, momentum, time/session features.
 9. Market-regime detection.

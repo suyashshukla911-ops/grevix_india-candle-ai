@@ -1,2 +1,2 @@
 # monitored market provider component
-PROVIDER = 'yahoo'
+PROVIDER = 'market-data'

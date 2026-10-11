@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -10,9 +9,6 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
-# A broad, curated Indian universe used for instant symbol suggestions.
-# Arbitrary NSE/BSE tickers are also accepted; no hard-coded list is required
-# for actual Yahoo Finance resolution.
 COMMON_INDIAN_STOCKS = [
     ("RELIANCE", "Reliance Industries"), ("TCS", "Tata Consultancy Services"),
     ("INFY", "Infosys"), ("HDFCBANK", "HDFC Bank"), ("ICICIBANK", "ICICI Bank"),
@@ -36,29 +32,22 @@ COMMON_INDIAN_STOCKS = [
 ]
 
 SECTOR_BY_SYMBOL = {
-    "RELIANCE": "Energy / Telecom", "TCS": "IT", "INFY": "IT",
-    "HDFCBANK": "Banking", "ICICIBANK": "Banking", "SBIN": "Banking",
-    "BHARTIARTL": "Telecom", "ITC": "FMCG", "LT": "Infrastructure",
-    "AXISBANK": "Banking", "MARUTI": "Automotive", "HINDUNILVR": "FMCG",
+    "RELIANCE": "Energy / Telecom", "TCS": "IT", "INFY": "IT", "HDFCBANK": "Banking",
+    "ICICIBANK": "Banking", "SBIN": "Banking", "BHARTIARTL": "Telecom", "ITC": "FMCG",
+    "LT": "Infrastructure", "AXISBANK": "Banking", "MARUTI": "Automotive", "HINDUNILVR": "FMCG",
     "TATAMOTORS": "Automotive", "TATASTEEL": "Metals", "ADANIENT": "Conglomerate",
-    "ADANIPORTS": "Logistics", "SUNPHARMA": "Pharma", "WIPRO": "IT",
-    "HCLTECH": "IT", "KOTAKBANK": "Banking", "BAJFINANCE": "Financial Services",
-    "M&M": "Automotive", "ULTRACEMCO": "Cement", "NTPC": "Power",
-    "POWERGRID": "Power", "ONGC": "Energy", "COALINDIA": "Mining",
-    "TITAN": "Consumer", "ASIANPAINT": "Consumer", "NESTLEIND": "FMCG",
-    "JSWSTEEL": "Metals", "TECHM": "IT", "INDUSINDBK": "Banking",
-    "BAJAJFINSV": "Financial Services", "DIVISLAB": "Pharma",
-    "DRREDDY": "Pharma", "CIPLA": "Pharma", "EICHERMOT": "Automotive",
-    "HEROMOTOCO": "Automotive", "TVSMOTOR": "Automotive", "GRASIM": "Conglomerate",
-    "BRITANNIA": "FMCG", "APOLLOHOSP": "Healthcare", "BEL": "Defence",
-    "TRENT": "Retail", "ZOMATO": "Internet / Consumer", "JIOFIN": "Financial Services",
+    "ADANIPORTS": "Logistics", "SUNPHARMA": "Pharma", "WIPRO": "IT", "HCLTECH": "IT",
+    "KOTAKBANK": "Banking", "BAJFINANCE": "Financial Services", "M&M": "Automotive",
+    "ULTRACEMCO": "Cement", "NTPC": "Power", "POWERGRID": "Power", "ONGC": "Energy",
+    "COALINDIA": "Mining", "TITAN": "Consumer", "ASIANPAINT": "Consumer", "NESTLEIND": "FMCG",
+    "JSWSTEEL": "Metals", "TECHM": "IT", "INDUSINDBK": "Banking", "BAJAJFINSV": "Financial Services",
+    "DIVISLAB": "Pharma", "DRREDDY": "Pharma", "CIPLA": "Pharma", "EICHERMOT": "Automotive",
+    "HEROMOTOCO": "Automotive", "TVSMOTOR": "Automotive", "GRASIM": "Conglomerate", "BRITANNIA": "FMCG",
+    "APOLLOHOSP": "Healthcare", "BEL": "Defence", "TRENT": "Retail", "ZOMATO": "Internet / Consumer",
+    "JIOFIN": "Financial Services",
 }
 
-INDEX_SYMBOLS = {
-    "nifty": "^NSEI",
-    "banknifty": "^NSEBANK",
-    "vix": "^INDIAVIX",
-}
+INDEX_SYMBOLS = {"nifty": "^NSEI", "banknifty": "^NSEBANK", "vix": "^INDIAVIX"}
 
 @dataclass(frozen=True)
 class Settings:
@@ -70,24 +59,32 @@ class Settings:
     max_cache_hours: float
     data_timeout_seconds: float
     max_candles_display: int
+    chart_candles: int
     runtime_dir: Path
     monitored_repo: Path
+    allow_fallback: bool
+    catalog_refresh_hours: float
+    deep_security_scan: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
         runtime = ROOT_DIR / os.getenv("RUNTIME_DIR", "runtime")
         monitored = ROOT_DIR / os.getenv("MONITORED_REPOSITORY", "workspace/monitored_repository")
         return cls(
-            app_name=os.getenv("APP_NAME", "India Candle AI — TrustGraph"),
+            app_name=os.getenv("APP_NAME", "India Candle AI"),
             default_interval=os.getenv("DEFAULT_INTERVAL", "60m"),
             train_days=int(os.getenv("TRAIN_DAYS", "90")),
             min_train_rows=int(os.getenv("MIN_TRAIN_ROWS", "240")),
             signal_precision_gate=float(os.getenv("SIGNAL_PRECISION_GATE", "0.90")),
             max_cache_hours=float(os.getenv("MAX_CACHE_HOURS", "12")),
-            data_timeout_seconds=float(os.getenv("DATA_TIMEOUT_SECONDS", "12")),
-            max_candles_display=int(os.getenv("MAX_CANDLES_DISPLAY", "140")),
+            data_timeout_seconds=float(os.getenv("DATA_TIMEOUT_SECONDS", "8")),
+            max_candles_display=int(os.getenv("MAX_CANDLES_DISPLAY", "90")),
+            chart_candles=int(os.getenv("CHART_CANDLES", "60")),
             runtime_dir=runtime,
             monitored_repo=monitored,
+            allow_fallback=os.getenv("ALLOW_FALLBACK", "false").lower() == "true",
+            catalog_refresh_hours=float(os.getenv("CATALOG_REFRESH_HOURS", "12")),
+            deep_security_scan=os.getenv("DEEP_SECURITY_SCAN", "false").lower() == "true",
         )
 
 settings = Settings.from_env()

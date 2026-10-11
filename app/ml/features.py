@@ -164,24 +164,59 @@ def regime_from_row(row: pd.Series, history: pd.DataFrame) -> dict[str, str]:
 def explain_row(row: pd.Series, signal: str, gate_pass: bool) -> dict[str, list[str]]:
     reasons: list[str] = []
     risks: list[str] = []
-    if row.get("ema_9_gap", 0) > 0 and row.get("ema_spread", 0) > 0:
-        reasons.append("Price and short EMA structure are positive.")
-    elif row.get("ema_9_gap", 0) < 0 and row.get("ema_spread", 0) < 0:
-        reasons.append("Price and short EMA structure are negative.")
-    if row.get("macd_hist", 0) > 0:
-        reasons.append("MACD histogram supports upward momentum.")
+    ema_gap = float(row.get("ema_9_gap", 0) or 0)
+    ema_spread = float(row.get("ema_spread", 0) or 0)
+    macd_hist = float(row.get("macd_hist", 0) or 0)
+    rsi_value = float(row.get("rsi_14", 50) or 50)
+    volume_z = float(row.get("volume_z", 0) or 0)
+    momentum = float(row.get("momentum_10", 0) or 0)
+    vol_regime = float(row.get("volatility_regime", 1) or 1)
+
+    bullish = []
+    bearish = []
+    if ema_gap > 0 and ema_spread > 0:
+        bullish.append("Price is above its short EMAs and the EMA structure is aligned upward.")
+    if ema_gap < 0 and ema_spread < 0:
+        bearish.append("Price is below its short EMAs and the EMA structure is aligned downward.")
+    if macd_hist > 0:
+        bullish.append("MACD histogram supports upward momentum.")
+    elif macd_hist < 0:
+        bearish.append("MACD histogram supports downward momentum.")
+    if rsi_value > 55:
+        bullish.append("RSI is above the neutral zone.")
+    elif rsi_value < 45:
+        bearish.append("RSI is below the neutral zone.")
+    if volume_z > 0.75:
+        reasons.append("Volume is elevated relative to its recent baseline.")
+    if momentum > 0:
+        bullish.append("Short-horizon momentum is positive.")
+    elif momentum < 0:
+        bearish.append("Short-horizon momentum is negative.")
+
+    if signal == "BUY":
+        reasons.extend(bullish[:4])
+        risks.extend(bearish[:2])
+    elif signal == "SELL":
+        reasons.extend(bearish[:4])
+        risks.extend(bullish[:2])
+    elif signal == "HOLD":
+        reasons.extend((bullish + bearish)[:3])
+        if len(bullish) and len(bearish):
+            risks.append("Bullish and bearish evidence is mixed; the model is holding instead of forcing a trade.")
+        else:
+            risks.append("The directional evidence is not strong enough to justify a new position.")
     else:
-        risks.append("MACD histogram is not supporting upward momentum.")
-    if row.get("volume_z", 0) > 0.75:
-        reasons.append("Volume is elevated versus its recent baseline.")
-    if row.get("rsi_14", 50) > 65:
-        reasons.append("RSI confirms strong momentum.")
-    elif row.get("rsi_14", 50) < 35:
-        reasons.append("RSI confirms weak momentum.")
-    if row.get("volatility_regime", 1) > 1.6:
-        risks.append("Volatility is elevated.")
+        reasons.extend((bullish + bearish)[:3])
+
+    if rsi_value >= 70:
+        risks.append("RSI is in an elevated zone; reversal risk is higher.")
+    elif rsi_value <= 30:
+        risks.append("RSI is in a depressed zone; volatility/reversal risk is higher.")
+    if vol_regime > 1.6:
+        risks.append("Volatility is elevated versus the recent baseline.")
     if not gate_pass:
         risks.append("The 90% selective-signal precision gate is not satisfied.")
     if signal == "REVALIDATE":
-        risks.append("The environment or data freshness gate requires revalidation.")
-    return {"reasons": reasons[:5], "risks": risks[:4]}
+        risks.append("The environment or market-data freshness gate requires revalidation.")
+    return {"reasons": reasons[:5] or ["No single feature cluster dominates the current setup."], "risks": risks[:5] or ["No major rule-based risk flag."]}
+
