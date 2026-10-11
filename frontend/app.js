@@ -4,7 +4,8 @@ const state = {
   suggestions: [],
   directory: [],
   watchlist: JSON.parse(localStorage.getItem("india-candle-watchlist") || "[]"),
-  activeAnalysisKey: null
+  activeAnalysisKey: null,
+  authenticated: false
 };
 
 const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"};
@@ -22,7 +23,7 @@ async function api(path, opts={}) {
       const text=await r.text();
       let data={};
       try{ data=text?JSON.parse(text):{} }catch{ data={detail:text||"Invalid server response"} }
-      if(!r.ok) throw new Error(data.detail||`Request failed (${r.status})`);
+      if(!r.ok){ const err=new Error(data.detail||`Request failed (${r.status})`); err.status=r.status; throw err; }
       return data;
     }catch(e){
       lastErr=e;
@@ -52,14 +53,42 @@ function setMarketBadge(status){
   let text="MARKET DATA: READY", cls="badge-green";
   if(value==="LIVE") text="MARKET DATA: LIVE";
   else if(value==="CACHED") { text="MARKET DATA: CACHED"; cls="badge-amber"; }
+  else if(value==="MARKET_CLOSED") text="MARKET DATA: MARKET CLOSED";
+  else if(value==="REPLAY") { text="MARKET DATA: RECORDED SESSION"; cls="badge-amber"; }
   else if(value==="STALE") { text="MARKET DATA: STALE"; cls="badge-red"; }
-  else if(value==="UNAVAILABLE" || value==="UNVERIFIED" || value==="FALLBACK") { text="MARKET DATA: RECHECK"; cls="badge-red"; }
+  else if(value==="UNAVAILABLE" || value==="UNVERIFIED" || value==="FALLBACK") { text="MARKET DATA: UNAVAILABLE"; cls="badge-red"; }
   el.textContent=text; el.className=`badge ${cls}`;
 }
+
+async function loadAuthStatus(){
+  try{
+    const a=await api("/api/auth/status",{retry:false});
+    state.authenticated=!!a.authenticated;
+    const el=$("adminStatus");
+    if(el){el.textContent=a.enabled?(a.authenticated?"ADMIN READY":"ADMIN LOGIN REQUIRED"):"OPEN";el.className=`pill ${a.authenticated||!a.enabled?"pill-good":"pill-warn"}`;}
+    if($("adminPassword")) $("adminPassword").disabled=!!a.authenticated;
+    if($("adminLoginBtn")) $("adminLoginBtn").textContent=a.authenticated?"SIGNED IN":"SIGN IN";
+  }catch(e){}
+}
+async function loginAdmin(){
+  const password=$("adminPassword")?.value||"";
+  if(!password){message("repoMessage","Enter the repository admin password.","err");return;}
+  setBusy($("adminLoginBtn"),true,"SIGNING IN…");
+  try{
+    await api("/api/auth/login",{method:"POST",body:JSON.stringify({password}),timeout:10000,retry:false});
+    await loadAuthStatus();
+    if($("adminPassword")) $("adminPassword").value="";
+    message("repoMessage","Repository admin access enabled for this browser session.","ok");
+  }catch(e){message("repoMessage",e.message,"err");}
+  finally{setBusy($("adminLoginBtn"),false);}
+}
+$("adminLoginBtn")?.addEventListener("click",loginAdmin);
+$("adminPassword")?.addEventListener("keydown",e=>{if(e.key==="Enter")loginAdmin();});
 
 async function boot(){
   try{
     const b=await api("/api/bootstrap");
+    await loadAuthStatus();
     setMarketBadge("READY");
     const c=b.catalog||{};
     $("catalogBadge").textContent=c.count?`UNIVERSE: ${c.count.toLocaleString("en-IN")}`:"UNIVERSE: EXCHANGE DIRECTORY";
@@ -153,26 +182,30 @@ function renderValidation(v){
   const items=[
     ["Direction accuracy",`${v.direction_accuracy}%`],
     ["Signal precision",`${v.signal_precision}%`],
+    ["Wilson lower bound",`${v.precision_lower_bound??"—"}%`],
+    ["Signal count",v.signal_count??0],
     ["Signal coverage",`${v.signal_coverage}%`],
     ["Return MAE",v.next_return_mae],
     ["Return R²",v.next_return_r2],
     ["Validation rows",v.validation_rows],
+    ["Calibration rows",v.calibration_rows],
     ["Training rows",v.train_rows],
     ["Threshold",v.threshold],
     ["Classifier",v.classifier_name],
   ];
   $("validation").innerHTML=items.map(([a,b])=>`<div class="val"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("");
   const pass=v.gate_pass;
-  $("gatePill").textContent=pass?`90% GATE: PASS · ${v.signal_precision}%`:`90% GATE: FAIL · ${v.signal_precision}%`;
+  $("gatePill").textContent=pass?`90% GATE: PASS · ${v.signal_precision}% · n=${v.signal_count}`:`90% GATE: FAIL · ${v.signal_precision}% · n=${v.signal_count}`;
   $("gatePill").className=`gate-pill ${pass?"gate-pass":"gate-fail"}`;
 }
 function renderBacktest(b){
   const items=[
     ["Validation period",b.validation_period],
     ["Signals",b.signals],["Winning signals",b.wins],["Losing signals",b.losses],
-    ["Signal precision",`${b.signal_precision}%`],["Coverage",`${b.coverage_pct}%`],
+    ["Paper precision",`${b.signal_precision}%`],["Coverage",`${b.coverage_pct}%`],
     ["Strategy return",`${b.strategy_return_pct}%`],["Buy & hold",`${b.buy_hold_return_pct}%`],
     ["Max drawdown",`${b.max_drawdown_pct}%`],["Profit factor",b.profit_factor],
+    ["Entry model",b.entry_model],["Cost assumption",`${b.cost_assumption_bps_roundtrip} bps round-trip`],
   ];
   $("backtest").innerHTML=items.map(([a,b])=>`<div class="val"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("");
   $("backtestPeriod").textContent=b.validation_period||"—";
@@ -193,7 +226,7 @@ function renderExplain(p){
   $("decisionNote").textContent=sig==="REVALIDATE"
     ? "This result remains inspectable, but the environment or market-data freshness gate requires revalidation before treating the action as trusted."
     : sig==="BUY" ? "BUY is eligible because the validation gate passed and current context does not block the directional signal."
-    : sig==="SELL" ? "SELL is eligible because the validation gate passed and current context does not block the directional signal."
+    : sig==="SELL / EXIT" ? "SELL / EXIT is an exit-oriented paper signal. It does not instruct the user to open a short position."
     : "HOLD means the system is deliberately refusing to force a directional trade under the current evidence.";
 }
 function renderRisk(r){
@@ -209,28 +242,27 @@ function renderRisk(r){
 }
 function renderModelOps(d){
   const m=d.model_operations||{};
-  const cacheLabel = m.cache_state === "cache" ? "Memory cache" : m.cache_state === "disk-cache" ? "Disk cache" : m.retrained ? "Freshly trained" : "New model";
-  const reason = m.retrained ? (m.cache_state === "forced-retrain" ? "Manual retrain requested" : "Prediction environment or data changed") : "Safe cached model reuse";
+  const cacheLabel=m.cache_state==="cache"?"Memory cache":m.cache_state==="disk-cache"?"Signed disk cache":m.retrained?"Freshly trained":"Scheduled refresh";
+  const reason=m.retrained?(m.cache_state==="forced-retrain"?"Manual retrain requested":"Environment/data refresh"):"Model reused within the configured refresh window";
   const items=[
-    ["Mode",cacheLabel],
-    ["Why",reason],
-    ["Model version",m.model_version||d.model?.model_version||"—"],
+    ["Mode",cacheLabel],["Why",reason],["Model version",m.model_version||d.model?.model_version||"—"],
     ["Training time",`${m.training_seconds??d.model?.training_seconds??0}s`],
-    ["Training rows",d.model?.train_rows||"—"],
-    ["Validation precision",`${d.model?.signal_precision ?? "—"}%`],
-    ["Data fingerprint",m.dataset_fingerprint||"—"],
-    ["Code environment",m.environment_fingerprint||"—"],
+    ["Training rows",d.model?.train_rows||"—"],["Validation precision",`${d.model?.signal_precision ?? "—"}%`],
+    ["Signal count",d.model?.signal_count??"—"],["Wilson lower bound",`${d.model?.precision_lower_bound ?? "—"}%`],
+    ["Data fingerprint",m.dataset_fingerprint||"—"],["Code environment",m.environment_fingerprint||"—"],
+    ["Libraries",Object.entries(d.model?.package_versions||{}).map(([k,v])=>`${k}=${v}`).join(" · ")||"—"],
   ];
   $("modelOps").innerHTML=items.map(([a,b])=>`<div class="val"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("");
 }
 function renderFreshness(d){
-  const data=d.data||{};
-  const current=data.status==="CURRENT"||data.status==="LIVE";
-  $("dataFreshPill").textContent=current?"CURRENT":"RECHECK";
-  $("dataFreshPill").className=`pill ${current?"pill-good":"pill-warn"}`;
+  const data=d.data||{}; const status=String(data.status||"UNKNOWN");
+  const current=["LIVE","MARKET_CLOSED"].includes(status);
+  $("dataFreshPill").textContent=status;
+  $("dataFreshPill").className=`pill ${current?"pill-good":status==="CACHED"||status==="REPLAY"?"pill-amber":"pill-warn"}`;
   const items=[
-    ["Status",data.status],["Last candle",new Date(d.last_timestamp).toLocaleString()],
+    ["Status",status],["Source",data.source==="REPLAY"?"REPLAY · recorded 9 Oct 2026":(data.source||"—")],["Last candle",d.last_timestamp?new Date(d.last_timestamp).toLocaleString():"—"],
     ["Freshness",`${fmt((data.freshness_seconds||0)/60,1)} min`],["History rows",data.history_rows],
+    ["Session",status==="MARKET_CLOSED"?"Last completed market session":status]
   ];
   $("dataFreshness").innerHTML=items.map(([a,b])=>`<div class="val"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("");
 }
@@ -338,12 +370,14 @@ async function analyze(force=false,full=false){
     drawChart();renderValidation(d.model);renderBacktest(d.backtest);renderNews(d.news);renderExplain({...d.prediction,regime:d.regime.regime});renderRisk(d.prediction.risk);renderModelOps(d);renderFreshness(d);
     setTrust(d.prediction.trust);renderTrustReport(d);
     const sourceNote=d.instrument.yahoo_symbol?` · ${d.instrument.yahoo_symbol}`:"";
-    message("marketMessage",`Analysis complete${sourceNote} · ${d.retrained?"model freshly trained":"cached model reused"} · ${d.elapsed_ms} ms`,"ok");
+    const dataNote=d.data?.source?` · ${d.data.source}`:"";
+    message("marketMessage",`Analysis complete${sourceNote}${dataNote} · ${d.retrained?"model freshly trained":"cached model reused"} · ${d.elapsed_ms} ms`,"ok");
   }catch(e){
     clearAnalysisOutput();
     setMarketBadge("UNAVAILABLE");
     const detail=e.message||"Market data is unavailable for this selection.";
-    message("marketMessage",detail,"err");
+    const isDataError=/No usable Yahoo Finance series|No current Yahoo Finance data|Market data|timeframe/i.test(detail);
+    message("marketMessage",detail,isDataError?"warn":"err");
     showAvailability(symbol).catch(()=>{});
   } finally { setBusy(btn,false); state.activeAnalysisKey=null; }
 }
@@ -366,7 +400,7 @@ async function loadPulse(){
 $("pulseBtn").onclick=loadPulse;
 
 function renderWatchChips(){
-  const defaults=state.watchlist.length?state.watchlist:["TCS","RELIANCE","INFY","HDFCBANK","ICICIBANK","SBIN"];
+  const defaults=state.watchlist.length?state.watchlist:["TCS","RELIANCE","ITC","SBIN","IDEA","ADANIENT"];
   $("watchChips").innerHTML=defaults.map(s=>`<button class="watch-chip" data-symbol="${esc(s)}">${esc(s)}</button>`).join("");
   document.querySelectorAll(".watch-chip").forEach(el=>el.onclick=()=>{ $("symbol").value=el.dataset.symbol; switchTab("market"); analyze(false,false); });
 }
@@ -433,7 +467,7 @@ function renderRepository(d){
   $("components").innerHTML=Object.entries(comps).map(([k,v])=>`<div class="component"><b>${esc(k.toUpperCase())}</b><div class="hash">${esc(v)}</div></div>`).join("")||"<div class='muted'>No tracked components.</div>";
   const items=d.impact?.items||[];
   $("impactList").innerHTML=items.length?items.slice(0,50).map(x=>`<div class="impact"><span class="tag ${String(x.impact).toLowerCase()}">${esc(x.impact)}</span><b>${esc(x.kind.toUpperCase())} · ${esc(x.path)}</b><div class="muted">${esc(x.component)} · ${esc(x.reason)}</div></div>`).join(""):`<div class='muted'>No changes detected. The live fingerprint matches the accepted baseline when a baseline exists.</div>`;
-  $("findings").innerHTML=(d.findings||[]).map(f=>`<div class="finding ${String(f.severity).toLowerCase()}"><b>${esc(f.severity)}</b> · ${esc(f.message)}<code>${esc(f.file)}:${esc(f.line)}</code></div>`).join("")||"<div class='muted'>No findings.</div>";
+  $("findings").innerHTML=(d.findings||[]).map(f=>`<div class="finding ${String(f.severity).toLowerCase()} ${f.blocking?"finding-blocking":"finding-accepted"}"><b>${esc(f.severity)}</b> · ${esc(f.message)} <span class="finding-state">${f.blocking?"BLOCKING NEW FINDING":f.accepted_baseline?"ACCEPTED BASELINE":"OBSERVATION"}</span><code>${esc(f.file)}:${esc(f.line)}</code></div>`).join("")||"<div class='muted'>No findings.</div>";
   $("repoStateBig").style.color=d.state==="CURRENT"?"var(--green)":d.state==="STALE"?"var(--red)":"var(--amber)";
   $("bindBtn").disabled=scope==="model";
   $("bindBtn").textContent=scope==="model"?"MODEL TRUST ACTIVE":"BIND TO MODEL TRUST";
@@ -442,7 +476,10 @@ function renderRepository(d){
 async function repoAction(path,button,label){
   setBusy(button,true,label);clearMessage("repoMessage");
   try{const d=await api(path,{method:"POST",timeout:45000});renderRepository(d);await loadAudit();message("repoMessage",d.message||`Repository state: ${d.state}.` ,"ok");}
-  catch(e){message("repoMessage",e.message,"err")} finally{setBusy(button,false);}
+  catch(e){
+    if(e.status===401) message("repoMessage","Admin sign-in required for repository changes. Sign in above, then retry.","err");
+    else message("repoMessage",e.message,"err");
+  } finally{setBusy(button,false);}
 }
 $("acceptBtn").onclick=()=>repoAction("/api/repository/accept",$("acceptBtn"),"ACCEPTING…");
 $("checkBtn").onclick=()=>repoAction("/api/repository/check",$("checkBtn"),"CHECKING…");

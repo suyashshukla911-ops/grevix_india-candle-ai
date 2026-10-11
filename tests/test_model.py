@@ -25,14 +25,14 @@ def test_model_fit_predict():
                          repo_current=True,data_current=True)
     assert report.model_version.startswith("v")
     assert report.environment_fingerprint == "env-a"
-    assert result["signal"] in {"BUY","SELL","HOLD","REVALIDATE"}
+    assert result["signal"] in {"BUY","SELL / EXIT","HOLD","NO-TRADE","REVALIDATE"}
     assert "backtest" in result
 
 def test_threshold_gate_is_explicit():
     y=np.array([0,0,0,1,1,1,1,1,0,0])
     p=np.array([.1,.2,.2,.95,.93,.92,.91,.9,.15,.3])
     returns=np.array([-0.01,-0.01,-0.01,0.01,0.01,0.01,0.01,0.01,-0.01,-0.01])
-    t,prec,cov,gate=CandleModel.optimize_threshold(y,p,0.90,actual_returns=returns)
+    t,prec,cov,gate=CandleModel.optimize_threshold(y,p,0.90,actual_returns=returns,min_signals=5)
     assert t>=0.55
     assert prec>=0.90
     assert gate is True

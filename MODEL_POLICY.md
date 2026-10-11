@@ -1,49 +1,60 @@
-# India Candle AI — Model Policy
+# Model Policy
 
-## 1. What the model predicts
-The core engine learns from OHLCV history and technical/session features and produces:
-- next-candle return/close scenario
-- next-candle high/low scenario
-- same-session EOD scenario
-- probability of upward movement
-- BUY / SELL / HOLD / REVALIDATE
+## What the 90% requirement means
 
-## 2. Validation
-Validation is chronological; rows are not shuffled. A validation window is held out from the end of the historical sample.
+The project does not claim 90% overall market-direction accuracy. The 90% requirement is a **selective signal-precision gate**.
 
-## 3. 90% gate
-The application does **not** claim that overall direction accuracy is 90%.
+A BUY/SELL signal becomes eligible for trust only when all of the following hold on the untouched holdout window:
 
-Instead, trusted BUY/SELL signals require selective validation precision >= `SIGNAL_PRECISION_GATE` (default 90%).
+1. Holdout signal count meets the configured minimum (30 for intraday; 15 for daily).
+2. Signal precision is at least 90%.
+3. The 95% Wilson lower confidence bound is at least 90%.
 
-The threshold is automatically optimized across a grid. The objective is:
+The threshold itself is selected on the calibration window, not on the final holdout.
 
-> maximize signal coverage subject to validation precision >= 90%.
+## Validation design
 
-When no threshold satisfies the gate, the application records a gate failure and deliberately uses HOLD instead of inventing confidence.
+```text
+Chronological history
+        |
+        +--> fit window
+        |
+        +--> calibration window
+        |
+        +--> untouched holdout
+```
 
-## 4. Trust decision
-A BUY/SELL signal can be treated as trusted only when:
-1. the model validation gate passes;
-2. market data is current;
-3. the model-bound repository is current;
-4. no other trust check forces revalidation.
+The classifier is calibrated with isotonic regression. The holdout is not used to choose the threshold.
 
-When repository or market-data freshness fails, the action becomes `REVALIDATE`. If a prediction-affecting repository update is accepted, the model environment fingerprint changes and the next analysis retrains under the new environment before producing a fresh trusted decision.
+## Decision hierarchy
 
-## 5. Model version
-Every training run creates a deterministic model version from:
-- feature list
-- threshold
-- classifier choice
-- dataset fingerprint
-- prediction-environment fingerprint (prediction-affecting repository components/dependencies)
-- gate setting
+```text
+Repository/data freshness invalid
+          -> REVALIDATE
 
-When a model-bound repository changes in a prediction-affecting component, the next accepted baseline changes the environment fingerprint and the cached model is invalidated automatically. Presentation-only or documentation-only changes do not force an unnecessary retrain.
+Model quality gate fails
+          -> NO-TRADE
 
-## 6. Risk
-Risk is calculated from ATR/realized volatility and is presented separately from the directional model. Stop loss / take profit are model-derived reference levels, not guaranteed execution prices.
+Liquidity floor fails
+          -> HOLD
 
-## 7. Limitations
-Financial markets are stochastic. No metric shown by the application guarantees future profit or future accuracy. A 90% precision gate is a historical quality threshold for selective signals, not a promise of future returns.
+Gate passes + qualifying probability
+          -> BUY / SELL
+
+Gate passes + probability inside threshold
+          -> HOLD
+```
+
+## Confidence
+
+Displayed confidence is the calibrated model probability transformed to a percentage. It is not artificially clamped to look like a stronger prediction.
+
+## Backtest assumptions
+
+Signals are entered at the next bar/session open and exited at the next bar/session close. Brokerage/slippage assumptions are included. The buy-and-hold comparator uses the first and last validation closes. A naive previous-return direction baseline is also reported.
+
+Stop-loss and take-profit levels are volatility heuristics for paper analysis and are explicitly not backtest-validated guarantees.
+
+## Real-world limitation
+
+No statistical model can guarantee returns. A high validation precision can fail under regime changes, transaction costs, liquidity constraints and distribution shifts. The TrustGraph freshness layer therefore complements, rather than replaces, model validation.

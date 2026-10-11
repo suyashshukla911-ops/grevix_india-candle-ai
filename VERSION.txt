@@ -1,0 +1,5 @@
+India Candle AI TrustGraph
+Version: 10.1.0-final
+Date: 2026-10-11
+AfterCode: Missing Update Window + Real World Feedback
+Release: Final remediation build

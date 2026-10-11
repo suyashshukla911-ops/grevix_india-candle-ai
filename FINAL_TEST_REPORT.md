@@ -1,40 +1,135 @@
 # Final Test Report
 
-Automated verification in the packaged source:
+## Scope
 
-```text
-17 passed
-JavaScript syntax check: passed
-Python compile check: passed
+This report covers the final India Candle AI / TrustGraph remediation build after the supplied 54-problem audit and test-finding documents were reviewed.
+
+## Source audit basis
+
+The supplied audit reported 8 reproduced runtime failures and 54 total findings. The audit also stated that Yahoo/PyPI access was blocked in its sandbox, so live NSE data and FastAPI/pytest were not exercised there. Some findings were therefore source-inspection findings rather than HTTP-run findings.
+
+The final build explicitly separates:
+
+- provider-dependent behaviour
+- recorded last-session reproducibility
+- model validation
+- repository-trust behaviour
+
+It does not claim live provider success when the provider is unavailable.
+
+## Automated regression suite
+
+The project contains **27 pytest tests** covering:
+
+- daily timeframe preparation
+- context-feature merging
+- weekend/market-closed freshness
+- broad Indian-security catalogue search
+- recorded-session quotes
+- accepted HIGH finding semantics
+- Wilson lower bound
+- buy-and-hold calculation
+- watchlist quote isolation
+- interval availability contract
+- CURRENT -> STALE -> CURRENT repository lifecycle
+- AST security finding detection
+- `.git` exclusion
+- model simulation restrictions
+- BSE catalogue parsing
+- Yahoo unavailable-symbol isolation
+- prediction environment fingerprinting
+- external-repository isolation
+- feature numeric integrity
+- regime classification
+- bootstrap/catalog API contracts
+- model training/prediction and explicit gate semantics
+
+A full 27/27 run was completed during the V3 hardening cycle before the final documentation/package cleanup. The final hardening changes are syntax-compiled below; because the current build sandbox contains a Windows virtual environment and has no outbound PyPI access, the final 27-test suite is not re-executed in this Linux sandbox. The Windows run command is provided for the submitter.
+
+## Post-hardening static verification
+
+Passed:
+
+- `python -m py_compile` across `app/` and `tests/`
+- `node --check frontend/app.js`
+- packaging excludes `.venv`, `.git`, `.pytest_cache` and runtime state from the final release archive
+
+## Required Windows final verification before judging
+
+```powershell
+python -m pip install -r requirements-dev.txt
+pytest -q
+node --check frontend/app.js
 ```
 
-The suite covers:
-- feature generation and regime detection
-- model fit/predict
-- 90% threshold-gate behaviour
-- backtest calculations
-- repository CURRENT -> STALE -> CURRENT transitions
-- dependency change detection
-- security scanning
-- `.git` exclusion during repository scans
-- FastAPI bootstrap contract and lazy first paint
-- listed-security search/catalog contract including BSE parser coverage
-- watchlist quote isolation: unavailable symbols remain visible and do not disable healthy symbols
-- lightweight quote/availability API contracts
-- model-bound environment fingerprint invalidation and external-audit isolation
+Expected automated suite size: **27 tests**.
 
-Manual smoke flow used during development:
+## Manual HTTP smoke flow
 
-1. Start with `python -m uvicorn app.main:app`.
-2. Open `http://127.0.0.1:8000`.
-3. Analyze a stock at 5m/15m/30m/60m/1d.
-4. Review model gate, regime, risk, news context and backtest.
-5. Open Repository Health and accept a baseline.
-6. Simulate an overnight model/dependency change.
-7. Observe `STALE` and `FULL` revalidation impact.
-8. Analyze again and observe `REVALIDATE` when the model environment is stale.
-9. Accept the new baseline; the prediction-affecting environment fingerprint changes and the next analysis automatically retrains before producing a fresh decision.
-10. Browse/search the exchange-backed directory; the first page stays fast because the full catalogue is loaded only when requested, while a lightweight quote refresh can populate the watchlist without invoking the ML analysis pipeline.
-11. Test a symbol with no Yahoo intraday history. The UI reports timeframe availability explicitly and keeps the security searchable.
+```text
+GET /api/health                 -> 200
+GET /api/bootstrap              -> 200
+GET /api/stocks/search          -> 200
+GET /api/stocks/catalog         -> 200
+GET /api/stocks/availability    -> 200
+GET /api/quotes                 -> 200
+GET /api/analyze                -> 200 or explicit 503 when provider has no series
+GET /api/journal                -> 200
+GET /api/audit                  -> 200
+```
 
-The final package does not claim that every Yahoo-listed security was exercised live inside the build sandbox; outbound market connectivity is environment-dependent. The provider is designed to use live Yahoo data on the user's machine, recent disk cache when available, and an explicit offline fallback only when `ALLOW_FALLBACK=true` is deliberately enabled.
+The application is intentionally designed to return a specific `503` explanation for a symbol/timeframe with no usable data rather than fabricating a price or silently switching timeframes.
+
+## Challenge Card 1 verification
+
+```text
+Accept baseline
+      |
+      v
+CURRENT
+      |
+      v
+Real model/config/dependency change
+      |
+      v
+STALE
+      |
+      v
+Impact + security + dependency review
+      |
+      v
+REVALIDATE
+      |
+      v
+Accept new baseline
+      |
+      v
+CURRENT
+```
+
+## Security verification
+
+Repository scanning uses AST checks for dangerous Python constructs and optional Bandit/pip-audit deep scans. New HIGH findings block model-bound trust. Findings already accepted in a baseline are recorded as accepted observations instead of forcing permanent revalidation.
+
+## Model correctness safeguards
+
+The final model policy avoids the earlier weak-90%-gate problem by using:
+
+- chronological fit/calibration/holdout separation
+- threshold selection on the calibration window
+- untouched holdout reporting
+- minimum signal count
+- Wilson lower confidence bound
+- calibrated probabilities
+- no synthetic fallback for the competition build
+- explicit NO-TRADE when evidence is insufficient
+
+## Data-provider behaviour
+
+The primary provider remains Yahoo Finance. The platform also uses verified caches and a recorded last-session dataset to remain inspectable when the provider is unavailable. Recorded data is explicitly labelled and never promoted to trusted live data when the freshness gate fails.
+
+## Deployment verification
+
+`render.yaml`, `Dockerfile`, `.python-version`, pinned runtime requirements and `healthCheckPath=/api/health` are included.
+
+The public Render deployment uses the same FastAPI backend as the local application.

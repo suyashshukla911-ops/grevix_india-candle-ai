@@ -35,7 +35,8 @@
   </div>
   <div class="hero-callout">
     <strong>90% selective-signal precision gate</strong>
-    <p>The model is not forced to trade. It optimizes the confidence threshold and promotes a BUY/SELL signal only when the chronological validation window meets the configured precision gate.</p>
+    <p>The model is not forced to trade. It calibrates the decision threshold on an earlier window and promotes a BUY/SELL signal only when the untouched holdout meets the configured precision and Wilson-confidence requirements.</p>
+    <div class="hero-note">Paper analysis only - no orders are placed. A validation gate is a quality-control rule, not a promise of future returns.</div>
   </div>
 </section>
 
@@ -142,6 +143,15 @@
     </div>
   </section>
 
+  <section class="panel data-source-panel">
+    <div class="panel-head"><div><span class="eyebrow">DATA & TRUST POLICY</span><h2>Never hide data quality</h2></div><span class="pill">PAPER ANALYSIS</span></div>
+    <div class="policy-grid">
+      <div><b>LIVE</b><span>Provider data is current.</span></div>
+      <div><b>MARKET CLOSED</b><span>Last completed session is used for paper analysis.</span></div>
+      <div><b>CACHED</b><span>Previously verified market data is used and labelled.</span></div>
+      <div><b>UNAVAILABLE</b><span>No usable provider series; no invented price is shown.</span></div>
+    </div>
+  </section>
   <section class="panel">
     <div class="panel-head"><div><span class="eyebrow">MODEL VALIDATION</span><h2>Measured, not guaranteed</h2></div><div class="gate-pill" id="gatePill">GATE —</div></div>
     <div class="validation-grid" id="validation"></div>
@@ -172,6 +182,12 @@
     <div class="hero-callout"><strong>What Clone & Monitor actually does</strong><div class="step-list"><div><b>1</b><span>Clone the repository</span></div><div><b>2</b><span>Accept its baseline</span></div><div><b>3</b><span>Check or refresh later</span></div><div><b>4</b><span>See changes, security and impact</span></div><div><b>5</b><span>Bind to model trust only if appropriate</span></div></div></div>
   </section>
   <div id="repoMessage" class="message hidden"></div>
+  <section class="control-card admin-card" id="adminCard">
+    <div class="field grow"><label>REPOSITORY ADMIN ACCESS</label><small class="field-hint">Repository mutation, cloning and baseline acceptance are protected by a short-lived session. Market analysis remains public/read-only.</small></div>
+    <input id="adminPassword" type="password" placeholder="Admin password" autocomplete="current-password">
+    <button id="adminLoginBtn" class="btn">SIGN IN</button>
+    <span id="adminStatus" class="pill">CHECKING…</span>
+  </section>
   <section class="control-card">
     <button id="acceptBtn" class="btn btn-primary">SCAN & ACCEPT BASELINE</button>
     <button id="checkBtn" class="btn">CHECK FOR UPDATES</button>

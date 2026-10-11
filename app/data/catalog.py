@@ -236,12 +236,12 @@ class IndianSecurityCatalog:
                     return rows
             except Exception:
                 pass
-        try:
-            return self.refresh()
-        except Exception:
-            self._rows = self._fallback()
-            self._loaded = True
-            return self._rows
+        # The bundled catalogue snapshot is deliberately the zero-latency baseline.
+        # Network refresh is explicit (`force=True`) so a slow/blocked NSE/BSE endpoint
+        # cannot make the stock search or watchlist hang.
+        self._rows = self._fallback()
+        self._loaded = True
+        return self._rows
 
     def all(self, force: bool = False) -> list[dict[str, str]]:
         return [dict(r) for r in self.load(force=force)]
@@ -280,6 +280,11 @@ class IndianSecurityCatalog:
 
     def status(self) -> dict[str, Any]:
         rows = self._rows if self._loaded else []
+        if not rows:
+            try:
+                rows = self._fallback()
+            except Exception:
+                rows = []
         age = None
         if self.cache_file.exists():
             try:

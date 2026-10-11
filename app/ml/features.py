@@ -1,18 +1,18 @@
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-FEATURES = [
+BASE_FEATURES = [
     "return_1","return_2","return_5","return_10","return_20",
-    "range_pct","body_pct","upper_wick_pct","lower_wick_pct",
-    "atr_pct","rsi_14","ema_9_gap","ema_20_gap","ema_50_gap","ema_spread",
-    "macd","macd_signal","macd_hist","bb_pos","volatility_20","volatility_60",
-    "volume_z","volume_ratio","vwap_gap","day_position","day_sin","day_cos",
-    "dow_sin","dow_cos","session_gap","close_session_high_gap","close_session_low_gap",
-    "momentum_10","momentum_20","trend_strength","volatility_regime"
+    "range_pct","body_pct","upper_wick_pct","lower_wick_pct","atr_pct","rsi_14",
+    "ema_9_gap","ema_20_gap","ema_50_gap","ema_spread","macd","macd_signal","macd_hist",
+    "bb_pos","volatility_20","volatility_60","volume_z","volume_ratio","vwap_gap",
+    "day_position","day_sin","day_cos","dow_sin","dow_cos","session_gap",
+    "close_session_high_gap","close_session_low_gap","momentum_10","momentum_20",
+    "trend_strength","volatility_regime","nifty_return","banknifty_return","vix_return",
 ]
+FEATURES = BASE_FEATURES
 
 def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
@@ -43,9 +43,9 @@ def build_features(df: pd.DataFrame, context: dict[str, pd.DataFrame] | None = N
     tr = pd.concat([
         d["high"] - d["low"],
         (d["high"] - prev).abs(),
-        (d["low"] - prev).abs()
+        (d["low"] - prev).abs(),
     ], axis=1).max(axis=1)
-    d["atr_pct"] = tr.rolling(14).mean() / d["close"].replace(0, np.nan)
+    d["atr_pct"] = tr.rolling(14, min_periods=14).mean() / d["close"].replace(0, np.nan)
 
     ema9 = d["close"].ewm(span=9, adjust=False).mean()
     ema20 = d["close"].ewm(span=20, adjust=False).mean()
@@ -62,17 +62,20 @@ def build_features(df: pd.DataFrame, context: dict[str, pd.DataFrame] | None = N
     d["macd_signal"] = macd_signal / d["close"].replace(0, np.nan)
     d["macd_hist"] = (macd - macd_signal) / d["close"].replace(0, np.nan)
 
-    rolling_mean = d["close"].rolling(20).mean()
-    rolling_std = d["close"].rolling(20).std()
+    rolling_mean = d["close"].rolling(20, min_periods=20).mean()
+    rolling_std = d["close"].rolling(20, min_periods=20).std()
     upper = rolling_mean + 2 * rolling_std
     lower = rolling_mean - 2 * rolling_std
     d["bb_pos"] = (d["close"] - lower) / (upper - lower).replace(0, np.nan)
 
     ret = d["return_1"]
-    d["volatility_20"] = ret.rolling(20).std()
-    d["volatility_60"] = ret.rolling(60).std()
-    vol_mean = d["volume"].rolling(30).mean()
-    vol_std = d["volume"].rolling(30).std().replace(0, np.nan)
+    d["volatility_20"] = ret.rolling(20, min_periods=15).std()
+    is_daily_hint = bool(len(d) > 2 and (d["timestamp"].diff().median() >= pd.Timedelta(hours=20)))
+    long_window = 60 if not is_daily_hint else 40
+    long_min = 60 if not is_daily_hint else 20
+    d["volatility_60"] = ret.rolling(long_window, min_periods=long_min).std()
+    vol_mean = d["volume"].rolling(30, min_periods=15).mean()
+    vol_std = d["volume"].rolling(30, min_periods=15).std().replace(0, np.nan)
     d["volume_z"] = (d["volume"] - vol_mean) / vol_std
     d["volume_ratio"] = d["volume"] / vol_mean.replace(0, np.nan)
 
@@ -84,18 +87,24 @@ def build_features(df: pd.DataFrame, context: dict[str, pd.DataFrame] | None = N
     vwap = cum_pv / cum_v
     d["vwap_gap"] = d["close"] / vwap - 1
 
-    minutes = d["timestamp"].dt.hour * 60 + d["timestamp"].dt.minute
-    d["day_position"] = ((minutes - 555).clip(lower=0, upper=375))/375.0
-    d["day_sin"] = np.sin(2*np.pi*d["day_position"])
-    d["day_cos"] = np.cos(2*np.pi*d["day_position"])
+    is_daily = bool(len(d) > 2 and (d["timestamp"].diff().median() >= pd.Timedelta(hours=20)))
+    if is_daily:
+        d["day_position"] = 0.5
+        d["day_sin"] = 0.0
+        d["day_cos"] = 1.0
+    else:
+        minutes = d["timestamp"].dt.hour * 60 + d["timestamp"].dt.minute
+        d["day_position"] = ((minutes - 555).clip(lower=0, upper=375))/375.0
+        d["day_sin"] = np.sin(2*np.pi*d["day_position"])
+        d["day_cos"] = np.cos(2*np.pi*d["day_position"])
     dow = d["timestamp"].dt.dayofweek
     d["dow_sin"] = np.sin(2*np.pi*dow/5)
     d["dow_cos"] = np.cos(2*np.pi*dow/5)
 
     session_open = d.groupby(sess)["open"].transform("first")
-    session_close = d.groupby(sess)["close"].last()
-    prev_session_close = pd.Series(sess).map(session_close.shift(1)).to_numpy()
-    d["session_gap"] = session_open.to_numpy() / prev_session_close - 1
+    session_close = d.groupby(sess)["close"].transform("last")
+    prev_session_close_map = session_close.groupby(sess).first().shift(1)
+    d["session_gap"] = session_open / sess.map(prev_session_close_map) - 1
     sh = d.groupby(sess)["high"].cummax()
     sl = d.groupby(sess)["low"].cummin()
     d["close_session_high_gap"] = d["close"]/sh - 1
@@ -103,26 +112,27 @@ def build_features(df: pd.DataFrame, context: dict[str, pd.DataFrame] | None = N
 
     d["momentum_10"] = d["close"]/d["close"].shift(10) - 1
     d["momentum_20"] = d["close"]/d["close"].shift(20) - 1
-    d["trend_strength"] = (d["ema_9_gap"].abs() + d["ema_20_gap"].abs() + d["macd_hist"].abs())
-    vol_med = d["volatility_20"].rolling(80).median()
+    d["trend_strength"] = d["ema_9_gap"].abs() + d["ema_20_gap"].abs() + d["macd_hist"].abs()
+    regime_window = 80 if not is_daily_hint else 40
+    regime_min = 30 if not is_daily_hint else 15
+    vol_med = d["volatility_20"].rolling(regime_window, min_periods=regime_min).median()
     d["volatility_regime"] = d["volatility_20"] / vol_med.replace(0, np.nan)
 
-    # Optional market context from Yahoo index candles.
-    if context:
-        for name, ctx in context.items():
-            if ctx is None or ctx.empty:
-                d[f"{name}_return"] = 0.0
-                continue
-            c = ctx[["timestamp","close"]].sort_values("timestamp").copy()
-            c[f"{name}_return"] = c["close"].pct_change()
-            c = c[["timestamp", f"{name}_return"]]
+    # Market context is part of the model feature set now.
+    for name in ("nifty", "banknifty", "vix"):
+        feature_name = f"{name}_return"
+        d[feature_name] = 0.0
+        ctx_source = (context or {}).get(name, pd.DataFrame())
+        if not ctx_source.empty:
+            ctx = ctx_source[["timestamp","close"]].sort_values("timestamp").copy()
+            ctx["_ctx_return"] = ctx["close"].pct_change().fillna(0.0)
             d = pd.merge_asof(
-                d.sort_values("timestamp"), c, on="timestamp",
-                direction="backward", tolerance=pd.Timedelta("30min")
+                d.sort_values("timestamp"), ctx[["timestamp", "_ctx_return"]],
+                on="timestamp", direction="backward", tolerance=pd.Timedelta("90min"),
             )
-            d[f"{name}_return"] = d[f"{name}_return"].fillna(0.0)
-            # Context columns are not part of the required baseline features;
-            # they are included separately by engine when available.
+            d[feature_name] = d["_ctx_return"].fillna(0.0)
+            d = d.drop(columns=["_ctx_return"], errors="ignore")
+
     return d.replace([np.inf,-np.inf], np.nan)
 
 def add_targets(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,22 +141,30 @@ def add_targets(df: pd.DataFrame) -> pd.DataFrame:
     d["next_return"] = d["close"].shift(-1)/d["close"] - 1
     d["next_high_return"] = d["high"].shift(-1)/d["close"] - 1
     d["next_low_return"] = d["low"].shift(-1)/d["close"] - 1
-    d["direction"] = (d["next_return"] > 0).astype(int)
+    d["execution_return"] = d["close"].shift(-1)/d["open"].shift(-1) - 1
+    # Treat tiny/flat moves as neutral and never count them as down.
+    eps = 1e-5
+    d["direction"] = np.where(d["next_return"] > eps, 1, np.where(d["next_return"] < -eps, 0, np.nan))
     session_close = d.groupby(sess)["close"].transform("last")
-    d["eod_return"] = session_close/d["close"] - 1
+    if len(d) > 2 and d["timestamp"].diff().median() >= pd.Timedelta(hours=20):
+        d["eod_return"] = d["next_return"]
+    else:
+        d["eod_return"] = session_close/d["close"] - 1
     d["is_session_last"] = d["timestamp"].eq(d.groupby(sess)["timestamp"].transform("max"))
     return d
 
 def prepare_training_frame(df: pd.DataFrame, context: dict[str,pd.DataFrame] | None=None) -> pd.DataFrame:
     d = add_targets(build_features(df, context=context))
-    d = d.loc[~d["is_session_last"]].copy()
-    d = d.dropna(subset=FEATURES + ["next_return","next_high_return","next_low_return","direction","eod_return"])
+    is_daily = bool(len(d) > 2 and (d["timestamp"].diff().median() >= pd.Timedelta(hours=20)))
+    if not is_daily:
+        d = d.loc[~d["is_session_last"]].copy()
+    d = d.dropna(subset=FEATURES + ["next_return","next_high_return","next_low_return","direction","eod_return","execution_return"])
     return d
 
 def regime_from_row(row: pd.Series, history: pd.DataFrame) -> dict[str, str]:
-    trend = float(row.get("trend_strength", 0))
-    vol = float(row.get("volatility_regime", 1))
-    momentum = float(row.get("momentum_10", 0))
+    trend = float(row.get("trend_strength", 0) or 0)
+    vol = float(row.get("volatility_regime", 1) or 1)
+    momentum = float(row.get("momentum_10", 0) or 0)
     if vol >= 1.7:
         regime = "HIGH VOLATILITY"
     elif trend >= 0.0045 and abs(momentum) >= 0.003:
@@ -171,52 +189,26 @@ def explain_row(row: pd.Series, signal: str, gate_pass: bool) -> dict[str, list[
     volume_z = float(row.get("volume_z", 0) or 0)
     momentum = float(row.get("momentum_10", 0) or 0)
     vol_regime = float(row.get("volatility_regime", 1) or 1)
+    bullish, bearish = [], []
+    if ema_gap > 0 and ema_spread > 0: bullish.append("Price is above its short EMAs and the EMA structure is aligned upward.")
+    if ema_gap < 0 and ema_spread < 0: bearish.append("Price is below its short EMAs and the EMA structure is aligned downward.")
+    if macd_hist > 0: bullish.append("MACD histogram supports upward momentum.")
+    elif macd_hist < 0: bearish.append("MACD histogram supports downward momentum.")
+    if rsi_value > 55: bullish.append("RSI is above the neutral zone.")
+    elif rsi_value < 45: bearish.append("RSI is below the neutral zone.")
+    if volume_z > 0.75: reasons.append("Volume is elevated relative to its recent baseline.")
+    if momentum > 0: bullish.append("Short-horizon momentum is positive.")
+    elif momentum < 0: bearish.append("Short-horizon momentum is negative.")
 
-    bullish = []
-    bearish = []
-    if ema_gap > 0 and ema_spread > 0:
-        bullish.append("Price is above its short EMAs and the EMA structure is aligned upward.")
-    if ema_gap < 0 and ema_spread < 0:
-        bearish.append("Price is below its short EMAs and the EMA structure is aligned downward.")
-    if macd_hist > 0:
-        bullish.append("MACD histogram supports upward momentum.")
-    elif macd_hist < 0:
-        bearish.append("MACD histogram supports downward momentum.")
-    if rsi_value > 55:
-        bullish.append("RSI is above the neutral zone.")
-    elif rsi_value < 45:
-        bearish.append("RSI is below the neutral zone.")
-    if volume_z > 0.75:
-        reasons.append("Volume is elevated relative to its recent baseline.")
-    if momentum > 0:
-        bullish.append("Short-horizon momentum is positive.")
-    elif momentum < 0:
-        bearish.append("Short-horizon momentum is negative.")
+    if signal == "BUY": reasons.extend(bullish[:4]); risks.extend(bearish[:2])
+    elif signal in {"SELL","SELL / EXIT"}: reasons.extend(bearish[:4]); risks.extend(bullish[:2])
+    elif signal == "HOLD": reasons.extend((bullish + bearish)[:3]); risks.append("Directional evidence is mixed or insufficient for a new position.")
+    else: reasons.extend((bullish + bearish)[:3])
 
-    if signal == "BUY":
-        reasons.extend(bullish[:4])
-        risks.extend(bearish[:2])
-    elif signal == "SELL":
-        reasons.extend(bearish[:4])
-        risks.extend(bullish[:2])
-    elif signal == "HOLD":
-        reasons.extend((bullish + bearish)[:3])
-        if len(bullish) and len(bearish):
-            risks.append("Bullish and bearish evidence is mixed; the model is holding instead of forcing a trade.")
-        else:
-            risks.append("The directional evidence is not strong enough to justify a new position.")
-    else:
-        reasons.extend((bullish + bearish)[:3])
-
-    if rsi_value >= 70:
-        risks.append("RSI is in an elevated zone; reversal risk is higher.")
-    elif rsi_value <= 30:
-        risks.append("RSI is in a depressed zone; volatility/reversal risk is higher.")
-    if vol_regime > 1.6:
-        risks.append("Volatility is elevated versus the recent baseline.")
-    if not gate_pass:
-        risks.append("The 90% selective-signal precision gate is not satisfied.")
-    if signal == "REVALIDATE":
-        risks.append("The environment or market-data freshness gate requires revalidation.")
-    return {"reasons": reasons[:5] or ["No single feature cluster dominates the current setup."], "risks": risks[:5] or ["No major rule-based risk flag."]}
-
+    if rsi_value >= 70: risks.append("RSI is in an elevated zone; reversal risk is higher.")
+    elif rsi_value <= 30: risks.append("RSI is in a depressed zone; volatility/reversal risk is higher.")
+    if vol_regime > 1.6: risks.append("Volatility is elevated versus the recent baseline.")
+    if not gate_pass: risks.append("The 90% selective-signal precision gate is not satisfied.")
+    if signal == "REVALIDATE": risks.append("The model/data environment requires revalidation before acting.")
+    return {"reasons": reasons[:5] or ["No single feature cluster dominates the current setup."],
+            "risks": risks[:5] or ["No major rule-based risk flag."]}

@@ -1,0 +1,2 @@
+f8eccefe4a95805b309452842a9c3a0a29b5cc41b36ed1bdee57b26c4caaf37b  /mnt/data/final_submission_package/india_candle_ai/VERSION.txt
+a33c483debf5bf18e83b1e2be656fee9ffea86d418d81f24c3afe2d6058c3869  /mnt/data/final_submission_package/india_candle_ai/FINAL_REMEDIATION_REPORT.pdf

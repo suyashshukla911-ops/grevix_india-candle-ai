@@ -1,17 +1,35 @@
 services:
   - type: web
-    name: india-candle-ai-aftercode
+    name: india-candle-ai-trustgraph
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.11"
       - key: ALLOW_FALLBACK
         value: "false"
+      - key: REPLAY_ENABLED
+        value: "true"
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: MODEL_ARTIFACT_KEY
+        sync: false
       - key: CATALOG_REFRESH_HOURS
         value: "12"
       - key: DEFAULT_INTERVAL
         value: "60m"
       - key: SIGNAL_PRECISION_GATE
         value: "0.90"
+      - key: MIN_SIGNAL_COUNT
+        value: "30"
+      - key: MIN_WILSON_LOWER
+        value: "0.90"
+      - key: DEEP_SECURITY_SCAN
+        value: "true"

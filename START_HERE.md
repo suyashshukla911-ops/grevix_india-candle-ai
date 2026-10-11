@@ -1,21 +1,68 @@
-# Start Here — India Candle AI TrustGraph
+# Start Here
 
-1. Create and activate a Python virtual environment.
-2. `python -m pip install -r requirements.txt`
-3. `copy .env.example .env` (PowerShell) or copy it manually.
-4. Keep `ALLOW_FALLBACK=false` for the competition build so market analysis uses live/cached provider data.
-5. Start with `python -m uvicorn app.main:app`.
-6. Open `http://127.0.0.1:8000`.
+## 1. Local run
 
-### First-time workflow
-- Search a stock by symbol/company name, or open **Browse Directory**. The directory is exchange-backed and also ships with a bundled catalogue snapshot so long-tail Indian securities remain searchable when an exchange refresh is unavailable.
-- Choose 5m, 15m, 30m, 60m or 1d and run **Analyze Stock**.
-- Use **Run Full Analysis** to execute data freshness + model gate + repository trust checks together.
-- The watchlist uses lightweight quote retrieval; unavailable symbols remain visible with an explicit status instead of breaking the list.
-- Use **Repository Health** for the AfterCode Missing Update Window workflow.
-- Use **Clone & Monitor** for any public GitHub repository. Accept a baseline, then check/refresh it later. External repositories remain audit-only until explicitly bound to model trust.
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+copy .env.example .env
+python -m uvicorn app.main:app
+```
 
-### Important
-A listed security can be searchable even when the selected intraday interval is not available from the market-data provider. The application reports that condition instead of silently substituting another timeframe.
+Open `http://127.0.0.1:8000`.
 
-Do not use `--reload` during judging; the monitored repository is intentionally mutable.
+## 2. First product check
+
+- Search `TCS` and choose `5m`.
+- Click **ANALYZE STOCK**.
+- Confirm the data source/status is visible.
+- Inspect the 5-minute chart, risk, validation and explanation.
+- Add several symbols to the watchlist and click **REFRESH WATCHLIST**.
+
+## 3. Broad-stock check
+
+Try company names such as `Lohia`, `Regency`, or another listed security. Search results come from the bundled Indian-security catalogue plus provider search when reachable.
+
+A security may be searchable while a requested Yahoo interval is unavailable. The app must show that as `UNAVAILABLE` rather than silently changing the timeframe.
+
+## 4. Challenge Card 1 check
+
+1. Open **Repository Health**.
+2. Sign in with the configured admin password if required.
+3. **SCAN & ACCEPT BASELINE**.
+4. Confirm `CURRENT`.
+5. Use **SIMULATE OVERNIGHT UPDATE**.
+6. Confirm modified files, dependency change and `STALE`.
+7. Return to Market Predictor and confirm the affected model is not treated as trusted.
+8. Accept the new baseline and confirm `CURRENT`.
+
+## 5. Generic GitHub repository check
+
+1. Paste a public GitHub repository URL into **Clone & Monitor**.
+2. Clone it.
+3. Review the isolated external-audit state.
+4. Accept its baseline.
+5. Refresh the repository later and inspect drift, dependencies and security/code-quality findings.
+6. Keep it external unless you explicitly choose **BIND TO MODEL TRUST**.
+
+## 6. Important states
+
+- `LIVE`: current provider data.
+- `CACHED`: verified prior provider data.
+- `MARKET CLOSED`: last completed session is valid for inspection.
+- `UNAVAILABLE`: no usable data for the requested interval.
+- `NO-TRADE`: model validation gate not met.
+- `REVALIDATE`: repository/model/data freshness prevents a trusted action.
+- `HOLD`: evidence is insufficient or liquidity is below the configured paper-analysis floor.
+
+## 7. Tests
+
+Development requirements are in `requirements-dev.txt`.
+
+```powershell
+python -m pip install -r requirements-dev.txt
+pytest -q
+```
+
+`node --check frontend/app.js` can be used to validate the browser bundle syntax.
