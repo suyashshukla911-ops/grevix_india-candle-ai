@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>India Candle AI</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">INDIA CANDLE AI</div>
+      <div class="sub">Intraday candles · news impact · walk-forward ML</div>
+    </div>
+    <div class="top-actions">
+      <span id="status" class="status">Checking connection…</span>
+      <a class="btn ghost" href="/auth/upstox/start">Connect Upstox</a>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <h1>Predict the next candle. Re-price the session as new information arrives.</h1>
+        <p>India-only NSE/BSE universe. 1–300 minute candles, current-session refresh, and a news-impact layer that is explicitly separated from the market model.</p>
+      </div>
+      <div class="warning">
+        <strong>Accuracy gate</strong>
+        <span>The UI shows measured validation precision/accuracy, not fabricated certainty. No market model can guarantee 100% future accuracy.</span>
+      </div>
+    </section>
+
+    <section class="control-card">
+      <div class="field">
+        <label>Stock / company</label>
+        <input id="symbol" list="priority-list" placeholder="HDFCBANK, Meesho, Tata Motors…">
+        <datalist id="priority-list"></datalist>
+      </div>
+      <div class="field small">
+        <label>Timeframe</label>
+        <select id="interval">
+          <option value="1">1m</option>
+          <option value="2">2m</option>
+          <option value="3">3m</option>
+          <option value="5" selected>5m</option>
+          <option value="10">10m</option>
+          <option value="15">15m</option>
+          <option value="30">30m</option>
+          <option value="60">1h</option>
+        </select>
+      </div>
+      <button id="analyze" class="btn primary">ANALYZE</button>
+      <button id="retrain" class="btn ghost">RETRAIN</button>
+    </section>
+
+    <section class="metrics">
+      <div class="metric"><span>Current</span><strong id="current">—</strong></div>
+      <div class="metric"><span>Next close</span><strong id="next-close">—</strong></div>
+      <div class="metric"><span>Next high</span><strong id="next-high">—</strong></div>
+      <div class="metric"><span>Next low</span><strong id="next-low">—</strong></div>
+      <div class="metric"><span>EOD close</span><strong id="eod-close">—</strong></div>
+      <div class="metric signal"><span>Signal</span><strong id="signal">—</strong></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="title">Chart</h2>
+            <span id="timestamp" class="muted">—</span>
+          </div>
+          <div id="probability" class="pill">UP —</div>
+        </div>
+        <div id="chart"></div>
+      </div>
+
+      <div class="panel news-panel">
+        <div class="panel-head">
+          <div>
+            <h2>News impact</h2>
+            <span class="muted">24h</span>
+          </div>
+          <div id="news-score" class="pill">Impact —</div>
+        </div>
+        <div id="news-summary" class="news-summary"></div>
+        <div id="news-list" class="news-list"></div>
+      </div>
+    </section>
+
+    <section class="panel pulse-panel">
+      <div class="panel-head">
+        <div>
+          <h2>India market pulse</h2>
+          <span class="muted">Full NSE/BSE quote universe · ranked by absolute intraday change</span>
+        </div>
+        <button id="pulse" class="btn ghost">REFRESH PULSE</button>
+      </div>
+      <div id="pulse-grid" class="pulse-grid"></div>
+    </section>
+
+    <section class="grid lower">
+      <div class="panel">
+        <div class="panel-head"><h2>Validation</h2></div>
+        <div class="validation" id="validation"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Why the system is different</h2></div>
+        <div class="explain">
+          <div><b>1. Exchange data</b><span>Upstox candles and quotes replace Yahoo/stooq scraping.</span></div>
+          <div><b>2. Session-aware</b><span>Overnight gap and time-of-day are features; the next day does not assume the prior close is the open.</span></div>
+          <div><b>3. News is contextual</b><span>Sentiment + event type + source quality + recency are scored separately from the market model.</span></div>
+          <div><b>4. No-trade gate</b><span>The model can refuse to issue a BUY/SELL when validation probability is weak or news conflicts.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Paper-analysis only. No order placement is included in this build.</span>
+      <span>India Candle AI v1</span>
+    </footer>
+  </main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
