@@ -9,7 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -79,6 +79,10 @@ async def session_middleware(request: Request, call_next):
 @app.get("/",include_in_schema=False)
 def index():
     return FileResponse(FRONTEND_DIR/"index.html")
+
+@app.head("/", include_in_schema=False)
+def index_head():
+    return Response(status_code=200)
 
 @app.get("/api/auth/status")
 def auth_status(request: Request):
