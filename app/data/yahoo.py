@@ -38,6 +38,11 @@ _MAX_DAYS = {
     "1m": 7, "2m": 30, "5m": 60, "15m": 60, "30m": 60, "60m": 180, "90m": 180, "1h": 180, "1d": 3650,
 }
 
+# A failed symbol/interval should never disable Yahoo for every other stock.
+# Keep a short negative cache per symbol+interval instead.
+NO_DATA_TTL_SECONDS = 90
+QUOTE_MEMORY_TTL_SECONDS = 30
+
 @dataclass
 class MarketSnapshot:
     symbol: str
@@ -72,8 +77,8 @@ class YahooProvider:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.catalog = IndianSecurityCatalog()
         self._memory: dict[tuple[str, str], tuple[float, MarketSnapshot]] = {}
-        self._live_disabled_until = 0.0
-        self._live_failures = 0
+        self._negative_cache: dict[tuple[str, str], float] = {}
+        self._quote_memory: dict[str, tuple[float, dict[str, Any]]] = {}
 
     @staticmethod
     def candidates(raw: str) -> list[str]:
@@ -83,6 +88,17 @@ class YahooProvider:
         if value.startswith("^") or "." in value:
             return [value]
         return [f"{value}.NS", f"{value}.BO"]
+
+    def _row_candidates(self, row: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        y = str(row.get("yahoo_symbol") or "").strip().upper()
+        if y:
+            out.append(y)
+        # If NSE is unavailable, a BSE code may still have a Yahoo series.
+        bse = str(row.get("bse_code") or "").strip()
+        if bse and bse.isdigit():
+            out.append(f"{bse}.BO")
+        return list(dict.fromkeys(out))
 
     def resolve_symbol(self, raw: str) -> tuple[str, str, str]:
         value = (raw or "").strip()
@@ -95,7 +111,10 @@ class YahooProvider:
         # Direct NSE catalogue resolution first.
         row = self.catalog.get(upper)
         if row:
-            return row["yahoo_symbol"], row["name"], "NSE"
+            candidates = self._row_candidates(row)
+            primary = candidates[0] if candidates else row.get("yahoo_symbol", f"{upper}.NS")
+            exchange = "NSE" if str(primary).endswith(".NS") else "BSE"
+            return primary, row["name"], exchange
         # Search Yahoo + catalogue for names and partial symbols.
         results = self.search(value, limit=12)
         if results:
@@ -103,17 +122,15 @@ class YahooProvider:
             return r.get("yahoo_symbol") or f"{r['symbol']}.NS", r.get("name") or r["symbol"], r.get("exchange", "NSE")
         return f"{upper}.NS", upper, "NSE"
 
-    def _live_allowed(self) -> bool:
-        return time.time() >= self._live_disabled_until
+    def _live_allowed(self, symbol: str, interval: str) -> bool:
+        until = self._negative_cache.get((symbol.upper(), interval), 0.0)
+        if time.time() >= until:
+            self._negative_cache.pop((symbol.upper(), interval), None)
+            return True
+        return False
 
-    def _record_live_failure(self) -> None:
-        self._live_failures += 1
-        cooldown = 30 if self._live_failures < 3 else 120
-        self._live_disabled_until = time.time() + cooldown
-
-    def _record_live_success(self) -> None:
-        self._live_failures = 0
-        self._live_disabled_until = 0.0
+    def _record_no_data(self, symbol: str, interval: str) -> None:
+        self._negative_cache[(symbol.upper(), interval)] = time.time() + NO_DATA_TTL_SECONDS
 
     def _cache_key(self, symbol: str, interval: str, days: int) -> str:
         return hashlib.sha256(f"{symbol}|{interval}|{days}".encode()).hexdigest()[:20]
@@ -260,20 +277,24 @@ class YahooProvider:
             candidates = [requested_symbol]
         elif explicit_exchange:
             candidates = [requested_symbol]
-        elif requested_symbol.endswith(".NS"):
-            candidates = [requested_symbol, requested_symbol[:-3] + ".BO"]
-        elif requested_symbol.endswith(".BO"):
-            candidates = [requested_symbol, requested_symbol[:-3] + ".NS"]
         else:
-            candidates = self.candidates(requested_symbol)
+            row = self.catalog.get(str(raw).strip().upper()) or self.catalog.get(requested_symbol)
+            if row:
+                candidates = self._row_candidates(row)
+            elif requested_symbol.endswith(".NS"):
+                candidates = [requested_symbol, requested_symbol[:-3] + ".BO"]
+            elif requested_symbol.endswith(".BO"):
+                candidates = [requested_symbol, requested_symbol[:-3] + ".NS"]
+            else:
+                candidates = self.candidates(requested_symbol)
+
         for candidate in candidates:
             frame = None
-            if self._live_allowed():
+            if self._live_allowed(candidate, interval):
                 frame = self._download_chart_endpoint(candidate, interval, effective_days)
                 if frame is None:
                     frame = self._download_yfinance(candidate, interval, effective_days)
             if frame is not None and len(frame) >= 60:
-                self._record_live_success()
                 self._write_cache(candidate, interval, effective_days, frame)
                 latest = frame["timestamp"].iloc[-1]
                 snap = MarketSnapshot(
@@ -312,10 +333,12 @@ class YahooProvider:
             self._memory[key] = (now, snap)
             return snap
 
-        self._record_live_failure()
+        for candidate in candidates:
+            self._record_no_data(candidate, interval)
         raise YahooDataError(
-            f"No current Yahoo Finance data was available for {raw} at {interval}. "
-            "Try another interval, refresh the data, or use the cached result when available."
+            f"Yahoo Finance returned no usable {interval} data for {raw}. "
+            "The security can still be listed in the directory, but this timeframe is unavailable from Yahoo. "
+            "Try 15m, 30m, 60m, or 1d, or refresh when the market provider has data."
         )
 
     def search(self, query: str, limit: int = 30) -> list[dict[str, Any]]:
@@ -376,25 +399,82 @@ class YahooProvider:
                 pass
         return self.catalog.status()
 
-    def snapshot_quote(self, symbol: str) -> dict[str, Any]:
-        snap = self.history(symbol, "1d", days=15)
-        last = float(snap.frame["close"].iloc[-1])
-        prev = float(snap.frame["close"].iloc[-2]) if len(snap.frame) > 1 else last
+    def availability(self, raw: str, intervals: list[str] | None = None) -> dict[str, Any]:
+        intervals = intervals or ["5m", "15m", "30m", "60m", "1d"]
+        def check(interval: str) -> dict[str, Any]:
+            try:
+                # Availability probing uses the smallest reasonable window that still
+                # produces enough rows for the provider's training-safe history contract.
+                days = {"5m": 5, "15m": 5, "30m": 10, "60m": 15, "1d": 120}.get(interval, 30)
+                snap = self.history(raw, interval, days=days, refresh=False)
+                return {
+                    "interval": interval, "available": True, "status": snap.data_status,
+                    "detail": f"{len(snap.frame)} candles · latest {snap.latest_timestamp}",
+                    "yahoo_symbol": snap.resolved_symbol,
+                }
+            except Exception as exc:
+                return {
+                    "interval": interval, "available": False, "status": "UNAVAILABLE",
+                    "detail": str(exc), "yahoo_symbol": "",
+                }
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(intervals))) as pool:
+            checks = list(pool.map(check, intervals))
+        return {"symbol": raw.strip().upper(), "intervals": checks}
+
+    def snapshot_quote(self, symbol: str, allow_stale_cache: bool = True) -> dict[str, Any]:
+        key = str(symbol).strip().upper()
+        hit = self._quote_memory.get(key)
+        if hit and time.time() - hit[0] < QUOTE_MEMORY_TTL_SECONDS:
+            return dict(hit[1])
+
+        row = self.catalog.get(key)
+        name = row.get("name", key) if row else key
+        exchange = row.get("exchange", "NSE") if row else ("BSE" if key.isdigit() else "NSE")
+        candidates = self._row_candidates(row) if row else self.candidates(key)
+        for candidate in candidates:
+            frame = None
+            if self._live_allowed(candidate, "1d"):
+                # Quote path is intentionally lightweight: a 5-day daily chart is enough
+                # to show price/change and avoids running the full prediction engine.
+                frame = self._download_chart_endpoint(candidate, "1d", 5)
+                if frame is None:
+                    frame = self._download_yfinance(candidate, "1d", 5)
+            if frame is not None and not frame.empty:
+                last = float(frame["close"].iloc[-1])
+                prev = float(frame["close"].iloc[-2]) if len(frame) > 1 else last
+                result = {
+                    "symbol": key, "name": name, "exchange": "NSE" if candidate.endswith(".NS") else "BSE",
+                    "yahoo_symbol": candidate, "price": last,
+                    "change": last - prev, "change_pct": ((last-prev)/prev*100.0) if prev else 0.0,
+                    "data_status": "LIVE", "latest_timestamp": frame["timestamp"].iloc[-1].isoformat(),
+                }
+                self._quote_memory[key] = (time.time(), result)
+                return result
+
+            if allow_stale_cache:
+                # Accept older cached daily data for the watchlist only. We label it
+                # explicitly so the UI never confuses it with a live quote.
+                cached = self._read_cache(candidate, "1d", 5)
+                if cached is not None and not cached.empty:
+                    last = float(cached["close"].iloc[-1])
+                    prev = float(cached["close"].iloc[-2]) if len(cached) > 1 else last
+                    result = {
+                        "symbol": key, "name": name, "exchange": "NSE" if candidate.endswith(".NS") else "BSE",
+                        "yahoo_symbol": candidate, "price": last,
+                        "change": last-prev, "change_pct": ((last-prev)/prev*100.0) if prev else 0.0,
+                        "data_status": "CACHED", "latest_timestamp": cached["timestamp"].iloc[-1].isoformat(),
+                    }
+                    self._quote_memory[key] = (time.time(), result)
+                    return result
+
         return {
-            "symbol": snap.symbol,
-            "name": snap.name,
-            "exchange": snap.exchange,
-            "price": last,
-            "change_pct": ((last-prev)/prev*100.0) if prev else 0.0,
-            "data_status": snap.data_status,
+            "symbol": key, "name": name, "exchange": exchange, "yahoo_symbol": candidates[0] if candidates else "",
+            "price": None, "change": None, "change_pct": None, "data_status": "UNAVAILABLE",
+            "latest_timestamp": None,
         }
 
     def pulse(self, symbols: list[str]) -> list[dict[str, Any]]:
-        results = []
-        for s in symbols:
-            try:
-                results.append(self.snapshot_quote(s))
-            except Exception:
-                continue
-        results.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
+        unique = list(dict.fromkeys([str(s).strip().upper() for s in symbols if str(s).strip()]))[:24]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(1, len(unique)))) as pool:
+            results = list(pool.map(self.snapshot_quote, unique))
         return results

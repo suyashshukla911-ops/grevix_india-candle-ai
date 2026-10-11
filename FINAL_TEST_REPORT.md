@@ -3,7 +3,7 @@
 Automated verification in the packaged source:
 
 ```text
-15 passed
+17 passed
 JavaScript syntax check: passed
 Python compile check: passed
 ```
@@ -19,6 +19,8 @@ The suite covers:
 - `.git` exclusion during repository scans
 - FastAPI bootstrap contract and lazy first paint
 - listed-security search/catalog contract including BSE parser coverage
+- watchlist quote isolation: unavailable symbols remain visible and do not disable healthy symbols
+- lightweight quote/availability API contracts
 - model-bound environment fingerprint invalidation and external-audit isolation
 
 Manual smoke flow used during development:
@@ -32,6 +34,7 @@ Manual smoke flow used during development:
 7. Observe `STALE` and `FULL` revalidation impact.
 8. Analyze again and observe `REVALIDATE` when the model environment is stale.
 9. Accept the new baseline; the prediction-affecting environment fingerprint changes and the next analysis automatically retrains before producing a fresh decision.
-10. Browse/search the exchange-backed directory; the first page stays fast because the full catalogue is loaded only when requested, and watchlist quotes are refreshed on demand rather than during initial paint.
+10. Browse/search the exchange-backed directory; the first page stays fast because the full catalogue is loaded only when requested, while a lightweight quote refresh can populate the watchlist without invoking the ML analysis pipeline.
+11. Test a symbol with no Yahoo intraday history. The UI reports timeframe availability explicitly and keeps the security searchable.
 
 The final package does not claim that every Yahoo-listed security was exercised live inside the build sandbox; outbound market connectivity is environment-dependent. The provider is designed to use live Yahoo data on the user's machine, recent disk cache when available, and an explicit offline fallback only when `ALLOW_FALLBACK=true` is deliberately enabled.

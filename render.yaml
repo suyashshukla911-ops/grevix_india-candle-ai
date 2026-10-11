@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: india-candle-ai-aftercode
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: ALLOW_FALLBACK
+        value: "false"
+      - key: CATALOG_REFRESH_HOURS
+        value: "12"
+      - key: DEFAULT_INTERVAL
+        value: "60m"
+      - key: SIGNAL_PRECISION_GATE
+        value: "0.90"

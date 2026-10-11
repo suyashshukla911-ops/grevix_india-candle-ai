@@ -3,7 +3,8 @@ const state = {
   last: null,
   suggestions: [],
   directory: [],
-  watchlist: JSON.parse(localStorage.getItem("india-candle-watchlist") || "[]")
+  watchlist: JSON.parse(localStorage.getItem("india-candle-watchlist") || "[]"),
+  activeAnalysisKey: null
 };
 
 const ESC = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"};
@@ -65,6 +66,7 @@ async function boot(){
     $("catalogBadge").className="badge badge-green";
     renderRepository(b.repository);
     renderWatchChips();
+    loadPulse().catch(()=>{});
   }catch(e){
     setMarketBadge("UNAVAILABLE");
     message("marketMessage",e.message,"err");
@@ -277,18 +279,50 @@ function renderLatestCandle(d){
   $("latestCandle").innerHTML=`<span>Latest ${esc(d.interval)} candle · ${new Date(r.time).toLocaleString()}</span><b class="${up?"latest-up":"latest-down"}">O ${fmt(r.open,2)} · H ${fmt(r.high,2)} · L ${fmt(r.low,2)} · C ${fmt(r.close,2)}</b><small>Volume ${Number(r.volume||0).toLocaleString("en-IN")}</small>`;
 }
 
+function clearAnalysisOutput(){
+  ["current","nextClose","nextHigh","nextLow","eodClose","modelState","modelVersion","trustScore"].forEach(id=>{if($(id)) $(id).textContent="—";});
+  if($("signal")){ $("signal").textContent="DATA UNAVAILABLE"; $("signal").className="signal-error"; }
+  if($("probability")) $("probability").textContent="UP —";
+  if($("latestCandle")) $("latestCandle").innerHTML='<span>Latest candle</span><b>—</b><small>No usable provider series</small>';
+  if($("validation")) $("validation").innerHTML='<div class="muted">No model validation is available until market data is returned.</div>';
+  if($("backtest")) $("backtest").innerHTML='<div class="muted">No backtest is available without a valid training series.</div>';
+}
+
+async function showAvailability(symbol){
+  const panel=$("availabilityPanel"); if(!panel) return;
+  panel.classList.remove("hidden");
+  $("availabilityTitle").textContent=`${symbol.toUpperCase()} · Yahoo Finance coverage`;
+  $("availabilityCount").textContent="CHECKING…";
+  $("availabilityGrid").innerHTML='<div class="muted">Checking supported timeframes…</div>';
+  try{
+    const d=await api(`/api/stocks/availability?symbol=${encodeURIComponent(symbol)}`,{timeout:30000,retry:false});
+    const rows=d.intervals||[];
+    const available=rows.filter(x=>x.available).length;
+    $("availabilityCount").textContent=`${available}/${rows.length} available`;
+    $("availabilityGrid").innerHTML=rows.map(x=>`<div class="availability-card ${x.available?"available":"unavailable"}"><b>${esc(x.interval)}</b><span>${esc(x.status)}</span><small>${esc(x.detail||"")}</small></div>`).join("");
+  }catch(e){
+    $("availabilityCount").textContent="UNAVAILABLE";
+    $("availabilityGrid").innerHTML=`<div class="message err">${esc(e.message)}</div>`;
+  }
+}
+
 async function analyze(force=false,full=false){
   const symbol=$("symbol").value.trim(),interval=$("interval").value;
   if(!symbol){message("marketMessage","Choose or enter a stock symbol first.","err");return;}
+  const key=`${symbol.toUpperCase()}|${interval}|${force}|${full}`;
+  if(state.activeAnalysisKey===key) return;
+  state.activeAnalysisKey=key;
   const btn=force?$("retrainBtn"):full?$("fullBtn"):$(`analyzeBtn`);
   setBusy(btn,true,force?"RETRAINING…":full?"RUNNING FULL CHECK…":"ANALYZING…");
   clearMessage("marketMessage");
+  if($("availabilityPanel")) $("availabilityPanel").classList.add("hidden");
   $("signal").textContent="ANALYZING…";
   try{
-    const url=full?`/api/full-analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`:`/api/analyze?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&retrain=${force}`;
-    const d=await api(url,{timeout: force?45000:35000});
+    const params=`symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`;
+    const url=full?`/api/full-analysis?${params}`:`/api/analyze?${params}&retrain=${force}&refresh_data=${force||full}`;
+    const d=await api(url,{timeout: force?60000:45000,retry:false});
     state.last=d;
-    setMarketBadge(d.data.status==="LIVE"?"LIVE":d.data.status==="CACHED"?"CACHED":d.data.status);
+    setMarketBadge(d.data.status);
     $("dataState").textContent=d.data.status;
     $("modelState").textContent=d.model.gate_pass?"PASS":"FAIL";
     $("modelVersion").textContent=d.model.model_version;
@@ -303,11 +337,15 @@ async function analyze(force=false,full=false){
     $("chartTitle").textContent=`${d.instrument.symbol} · ${d.instrument.name} · ${intervalLabel}`;
     drawChart();renderValidation(d.model);renderBacktest(d.backtest);renderNews(d.news);renderExplain({...d.prediction,regime:d.regime.regime});renderRisk(d.prediction.risk);renderModelOps(d);renderFreshness(d);
     setTrust(d.prediction.trust);renderTrustReport(d);
-    message("marketMessage",`Analysis complete · ${d.retrained?"model freshly trained":"cached model reused"} · ${d.elapsed_ms} ms` ,"ok");
+    const sourceNote=d.instrument.yahoo_symbol?` · ${d.instrument.yahoo_symbol}`:"";
+    message("marketMessage",`Analysis complete${sourceNote} · ${d.retrained?"model freshly trained":"cached model reused"} · ${d.elapsed_ms} ms`,"ok");
   }catch(e){
-    $("signal").textContent="RETRY";$("signal").className="signal-error";
-    message("marketMessage",e.message,"err");
-  } finally { setBusy(btn,false); }
+    clearAnalysisOutput();
+    setMarketBadge("UNAVAILABLE");
+    const detail=e.message||"Market data is unavailable for this selection.";
+    message("marketMessage",detail,"err");
+    showAvailability(symbol).catch(()=>{});
+  } finally { setBusy(btn,false); state.activeAnalysisKey=null; }
 }
 $("analyzeBtn").onclick=()=>analyze(false,false);
 $("retrainBtn").onclick=()=>analyze(true,false);
@@ -315,13 +353,15 @@ $("fullBtn").onclick=()=>analyze(false,true);
 $("backtestBtn").onclick=()=>state.last?renderBacktest(state.last.backtest):analyze(false,false);
 
 async function loadPulse(){
-  setBusy($("pulseBtn"),true,"LOADING…");
+  setBusy($("pulseBtn"),true,"REFRESHING…");
   try{
     const symbols=state.watchlist.length?state.watchlist:undefined;
-    const d=await api(symbols?`/api/pulse?symbols=${encodeURIComponent(symbols.join(","))}&limit=24`:`/api/pulse?limit=12`);
-    $("pulseGrid").innerHTML=(d.results||[]).map(x=>`<div class="pulse-item" data-symbol="${esc(x.symbol)}"><b>${esc(x.symbol)}</b><span>${esc(x.name)}</span><div class="${x.change_pct>=0?"pulse-up":"pulse-down"}">${x.change_pct>=0?"+":""}${Number(x.change_pct).toFixed(2)}%</div><small>${fmt(x.price)}</small></div>`).join("") || '<div class="muted">No market quotes returned.</div>';
-    document.querySelectorAll(".pulse-item").forEach(el=>el.onclick=()=>{ $("symbol").value=el.dataset.symbol; switchTab("market"); analyze(false,false); });
-  }catch(e){message("marketMessage",e.message,"err")}finally{setBusy($("pulseBtn"),false)}
+    const d=await api(symbols?`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}&limit=24`:`/api/quotes?limit=8`,{timeout:15000,retry:false});
+    const rows=d.results||[];
+    $("pulseGrid").innerHTML=rows.map(x=>`<div class="pulse-item ${x.data_status==="UNAVAILABLE"?"pulse-unavailable":""}" data-symbol="${esc(x.symbol)}"><div class="pulse-top"><b>${esc(x.symbol)}</b><button class="watch-remove" data-remove="${esc(x.symbol)}" title="Remove">×</button></div><span>${esc(x.name)}</span><strong>${x.price==null?"—":fmt(x.price)}</strong><div class="${x.change_pct==null?"muted":x.change_pct>=0?"pulse-up":"pulse-down"}">${x.change_pct==null?"DATA UNAVAILABLE":`${x.change_pct>=0?"+":""}${Number(x.change_pct).toFixed(2)}%`}</div><small>${x.data_status==="CACHED"?"LAST VERIFIED CACHE":x.data_status}</small></div>`).join("") || '<div class="muted">No watchlist symbols added yet.</div>';
+    document.querySelectorAll(".pulse-item").forEach(el=>el.onclick=(ev)=>{ if(ev.target.closest(".watch-remove")) return; $("symbol").value=el.dataset.symbol; switchTab("market"); analyze(false,false); });
+    document.querySelectorAll(".watch-remove").forEach(btn=>btn.onclick=(ev)=>{ev.stopPropagation();const s=btn.dataset.remove;state.watchlist=state.watchlist.filter(x=>x!==s);saveWatchlist();renderWatchChips();loadPulse();});
+  }catch(e){message("marketMessage",e.message,"err")}finally{setBusy($("pulseBtn"),false);}
 }
 $("pulseBtn").onclick=loadPulse;
 
@@ -368,7 +408,7 @@ function renderDirectory(q=""){
   const rows=query?state.directory.filter(x=>`${x.symbol} ${x.name}`.toLowerCase().includes(query)):state.directory;
   $("directoryCount").textContent=`${rows.length.toLocaleString("en-IN")} matches · ${state.directory.length.toLocaleString("en-IN")} indexed`;
   const visible=rows.slice(0,240);
-  $("directoryList").innerHTML=visible.map(x=>`<button class="directory-row" data-symbol="${esc(x.symbol)}"><span><b>${esc(x.symbol)}</b><small>${esc(x.name)}</small></span><em>${esc(x.exchange||"")} · ${esc(x.segment||"")}</em></button>`).join("") || '<div class="muted">No security matched the current search.</div>';
+  $("directoryList").innerHTML=visible.map(x=>`<button class="directory-row" data-symbol="${esc(x.symbol)}"><span><b>${esc(x.symbol)}</b><small>${esc(x.name)}</small></span><em>${esc(x.exchange||"")} · ${esc(x.segment||"")} ${x.yahoo_symbol?`· ${esc(x.yahoo_symbol)}`:""}</em></button>`).join("") || '<div class="muted">No security matched the current search.</div>';
   document.querySelectorAll(".directory-row").forEach(btn=>btn.onclick=()=>{ $("symbol").value=btn.dataset.symbol;$("stockModal").classList.add("hidden");switchTab("market");analyze(false,false); });
 }
 $("browseBtn").onclick=openDirectory;

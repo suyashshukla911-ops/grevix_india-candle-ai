@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
             p.write_text(content, encoding="utf-8")
     yield
 
-app = FastAPI(title=settings.app_name, version="6.0.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="7.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.middleware("http")
@@ -105,6 +105,18 @@ def catalog(refresh: bool = False, full: bool = False, limit: int = Query(5000, 
         rows = market.catalog.all(force=refresh)
         return {"results": rows[:limit], "count": len(rows)}
     return market.catalog_status(refresh)
+
+@app.get("/api/stocks/availability")
+async def stock_availability(symbol: str = Query(..., min_length=1, max_length=120)):
+    intervals = ["5m", "15m", "30m", "60m", "1d"]
+    return await run_in_threadpool(market.availability, symbol, intervals)
+
+@app.get("/api/quotes")
+async def quotes(symbols: str = Query("", max_length=2000), limit: int = Query(24, ge=1, le=24)):
+    requested = [x.strip() for x in symbols.split(",") if x.strip()] if symbols else []
+    if not requested:
+        requested = [s for s, _ in COMMON_INDIAN_STOCKS[:limit]]
+    return {"results": await run_in_threadpool(market.pulse, requested[:limit])}
 
 @app.get("/api/analyze")
 async def analyze(symbol: str = Query(..., min_length=1, max_length=120), interval: str = Query(settings.default_interval), retrain: bool = False, refresh_data: bool = False):

@@ -13,6 +13,8 @@ India Candle AI is a working stock-analysis prototype adapted for the AfterCode 
 - Market-regime detection, deterministic explainability, risk engine, historical backtest and buy-and-hold comparison.
 - Model caching/versioning, environment-aware retraining, signal journal and watchlist.
 - Market-data freshness is evaluated separately from repository freshness.
+- Lightweight watchlist quotes use a dedicated quote path (not the ML analysis engine), keep unavailable symbols visible, and can show a clearly-labelled cached quote instead of breaking the whole watchlist.
+- Symbol availability is explicit: a security can be listed and searchable while a requested Yahoo timeframe is unavailable; the UI shows the supported intervals rather than silently changing the request.
 
 ## TrustGraph adaptation
 
@@ -54,7 +56,7 @@ The application never executes the monitored repository code.
 
 The competition build uses live/cached market data and does not depend on an application API key. If a Yahoo Finance request fails, the UI reports that market history is unavailable or cached; it does not label the product as a demo. An explicit offline fallback can be enabled for testing with `ALLOW_FALLBACK=true`, but it is disabled by default.
 
-The directory is intentionally broader than a fixed watchlist: search and Browse Directory use the refreshed exchange universe, including small/SME names when the exchange catalogue is reachable. Not every listed security necessarily has intraday history available from the market-data provider. The directory can therefore contain a security that is selectable but whose requested 5m/15m history is unavailable. The application reports that condition instead of silently changing the timeframe.
+The directory is intentionally broader than a fixed watchlist: search and Browse Directory use the refreshed exchange universe, including small/SME names when the exchange catalogue is reachable. A bundled catalogue snapshot is also included so thousands of Indian securities remain searchable even if the exchange catalogue cannot be refreshed at startup. Not every listed security necessarily has intraday history available from the market-data provider. The directory can therefore contain a security that is selectable but whose requested 5m/15m history is unavailable. The application reports that condition instead of silently changing the timeframe.
 
 ## Run
 
@@ -67,6 +69,9 @@ python -m uvicorn app.main:app
 ```
 
 Open `http://127.0.0.1:8000`.
+
+Live deployment: https://india-candle-ai-aftercode.onrender.com/
+GitHub: https://github.com/suyashshukla911-ops/grevix_india-candle-ai
 
 For judging, use the command above without `--reload`.
 

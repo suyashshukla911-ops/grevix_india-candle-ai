@@ -33,6 +33,15 @@ class IndianSecurityCatalog:
         self._loaded = False
 
     def _fallback(self) -> list[dict[str, str]]:
+        bundled = Path(__file__).resolve().with_name("indian_security_catalog_seed.json")
+        if bundled.exists():
+            try:
+                data = json.loads(bundled.read_text(encoding="utf-8"))
+                rows = data.get("rows") or []
+                if rows:
+                    return rows
+            except Exception:
+                pass
         return [
             {
                 "symbol": s,

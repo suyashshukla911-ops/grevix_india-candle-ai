@@ -75,6 +75,11 @@
     <button id="fullBtn" class="btn btn-dark">RUN FULL ANALYSIS</button>
   </section>
   <div id="marketMessage" class="message hidden"></div>
+  <section id="availabilityPanel" class="panel availability-panel hidden">
+    <div class="panel-head"><div><span class="eyebrow">DATA AVAILABILITY</span><h2 id="availabilityTitle">Provider coverage</h2></div><span class="pill" id="availabilityCount">—</span></div>
+    <p id="availabilityNote" class="muted">Yahoo Finance availability differs by security and timeframe. A listed security can still lack an intraday series.</p>
+    <div id="availabilityGrid" class="availability-grid"></div>
+  </section>
 
   <section class="trust-strip" id="trustStrip">
     <div><span>MARKET DATA</span><b id="dataState">—</b></div>
