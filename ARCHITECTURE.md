@@ -1,46 +1,39 @@
-# Architecture — India Candle AI v3
+# Architecture — TrustGraph
 
 ```text
-Browser UI
-   │
-   ▼
-FastAPI request layer
-   ├───────────────┬─────────────────────┐
-   ▼               ▼                     ▼
-Market Engine   Repository Sentinel   Market Overview
-   │               │
-   │               ├─ fingerprint + manifest
-   │               ├─ security/code-quality scan
-   │               ├─ accepted baseline + history
-   │               └─ CURRENT / STALE state
-   │
-   ├─ LocalMarketStore
-   ├─ feature engineering
-   ├─ HistGradientBoosting models
-   ├─ validation threshold selection
-   ├─ 90% signal-precision gate
-   ├─ next close/high/low/EOD
-   └─ local research/news overlay
+                        INDIA CANDLE AI
+                              |
+                 +------------+-------------+
+                 |                          |
+           MARKET ENGINE              REPOSITORY ENGINE
+                 |                          |
+      Yahoo -> cache -> fallback     fingerprints
+                 |                   component hashes
+      feature engineering            change impact
+                 |                   security scanner
+      regime detection                     |
+                 |                          |
+      model selection                      |
+      threshold optimizer                  |
+      confidence engine                    |
+                 |                          |
+                 +------------+-------------+
+                              |
+                         TRUST ENGINE
+                              |
+                 +------------+-------------+
+                 |            |              |
+              TRUSTED      NO-TRADE      REVALIDATE
 ```
 
-## Market path
-
-`LocalMarketStore → interval cache → feature engineering → time-ordered validation → gradient boosting → 90% precision gate → prediction → environment freshness gate → UI`
-
-Models are cached per `(symbol, interval)` to make repeated analysis fast. Recalibration explicitly replaces the cached model.
-
-The 90% requirement is implemented as a **minimum validation precision gate for selective BUY/SELL signals**. Overall direction accuracy is reported separately and is not artificially inflated to 90%.
-
-## Freshness path
-
-`LocalRepositoryProvider → SHA-256 fingerprint + manifest → security/code-quality scan → accepted baseline → live comparison → CURRENT/STALE`
-
-When the repository changes, the prior accepted result becomes stale. The market calculation remains inspectable, but `trusted_signal = REVALIDATE` until a new baseline is accepted.
-
-## API execution model
-
-CPU-bound analysis runs in FastAPI's worker thread pool. This keeps the request loop responsive and prevents model fitting from making unrelated browser requests fail.
-
-## Extension boundary
-
-A future `GitHubRepositoryProvider` can provide a repository snapshot to the sentinel without changing the dashboard state machine. A live market-data provider can replace `LocalMarketStore` behind the same engine interface.
+## Runtime flow
+1. Browser calls one FastAPI client with timeout/retry semantics.
+2. Market provider resolves arbitrary Yahoo tickers as `.NS` then `.BO`.
+3. Yahoo data is cached on disk; if Yahoo is unavailable, a prior cache is used; otherwise a deterministic local demo series is generated.
+4. Feature engineering builds temporal, technical and regime features.
+5. The model selects a direction classifier and trains four lightweight regressors.
+6. Threshold optimization seeks >=90% selective-signal precision while maximizing coverage.
+7. Repository state is checked.
+8. Data freshness and model gate are checked.
+9. TrustGraph returns the final signal state.
+10. Every signal and important repository event is stored in SQLite.

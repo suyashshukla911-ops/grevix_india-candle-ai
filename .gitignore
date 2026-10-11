@@ -1,8 +1,9 @@
-.venv/
 __pycache__/
 .pytest_cache/
-*.pyc
+.venv/
 .env
-.DS_Store
-*.log
-data/sentinel_state.json
+runtime/*.sqlite3
+runtime/*.json
+runtime/cache/*
+runtime/models/*
+data_cache/

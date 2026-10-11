@@ -1,265 +1,222 @@
+
 const $ = (id) => document.getElementById(id);
-const fmt = (n, d = 2) => Number.isFinite(Number(n))
-  ? Number(n).toLocaleString('en-IN', {minimumFractionDigits: d, maximumFractionDigits: d})
-  : '—';
+const state = { last:null };
 
-async function api(url, options = {}, timeoutMs = 30000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {...options, signal: controller.signal, cache: 'no-store'});
-    const contentType = response.headers.get('content-type') || '';
-    const payload = contentType.includes('application/json') ? await response.json() : {detail: await response.text()};
-    if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
-    return payload;
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('The operation took too long. Try again; cached analyses should be fast.');
-    if (error instanceof TypeError) throw new Error('The local API is not reachable. Confirm that Uvicorn is still running on 127.0.0.1:8000.');
-    throw error;
-  } finally {
-    clearTimeout(timer);
+function fmt(x,d=2){ return Number.isFinite(Number(x)) ? Number(x).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—"; }
+function setBusy(btn,busy,label){ btn.disabled=busy; if(busy){btn.dataset.old=btn.textContent;btn.textContent=label;}else{btn.textContent=btn.dataset.old||btn.textContent;} }
+async function api(path, opts={}) {
+  const attempts = opts.retry === false ? 1 : 2;
+  let lastErr = null;
+  for(let attempt=0; attempt<attempts; attempt++){
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 25000);
+    try{
+      const r=await fetch(path,{...opts,signal:controller.signal,headers:{"Content-Type":"application/json",...(opts.headers||{})}});
+      const text=await r.text(); let data={};
+      try{ data=text?JSON.parse(text):{} }catch{ data={detail:text||"Invalid server response"} }
+      if(!r.ok) throw new Error(data.detail||`Request failed (${r.status})`);
+      return data;
+    }catch(e){
+      lastErr=e;
+      if(attempt===attempts-1) throw new Error(e.name==="AbortError" ? "Request timed out. The model is still safe to retry." : e.message);
+      await new Promise(r=>setTimeout(r,350));
+    } finally { clearTimeout(timer); }
+  }
+  throw lastErr || new Error("Request failed");
+}
+function message(target,text,kind="ok"){ const el=$(target); if(!el)return; el.textContent=text; el.className=`message ${kind}`; }
+function clearMessage(target){ const el=$(target); if(el){el.className="message hidden";el.textContent="";} }
+
+function switchTab(name){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id===name));
+}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
+
+async function boot(){
+  try{
+    const b=await api("/api/bootstrap");
+    $("providerBadge").textContent=`DATA: ${b.mode}`;
+    $("providerBadge").className="badge badge-green";
+    $("stockList").innerHTML=(b.universe||[]).map(x=>`<option value="${x.symbol}">${x.name}</option>`).join("");
+    renderRepository(b.repository);
+  }catch(e){
+    $("providerBadge").textContent="DATA: LOCAL FALLBACK";
+    $("providerBadge").className="badge badge-amber";
+    message("marketMessage",e.message,"err");
   }
 }
 
-function showAlert(el, msg, kind = '') {
-  el.textContent = msg;
-  el.className = `alert ${kind}`.trim();
-  el.classList.remove('hidden');
-}
-function hideAlert(el) { el.classList.add('hidden'); }
-function setBadge(el, text, kind = 'neutral') { el.textContent = text; el.className = `badge ${kind}`; }
-function setBusy(button, busy, busyText) {
-  if (!button) return;
-  if (!button.dataset.readyText) button.dataset.readyText = button.textContent;
-  button.disabled = busy;
-  button.textContent = busy ? busyText : button.dataset.readyText;
-}
-
-function switchView(view) {
-  document.querySelectorAll('.view').forEach(x => x.classList.toggle('active', x.id === `${view}View`));
-  document.querySelectorAll('.nav-btn').forEach(x => x.classList.toggle('active', x.dataset.view === view));
-  if (view === 'repo') loadRepo();
-}
-
-document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
-document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => switchView('repo')));
-
-async function boot() {
-  try {
-    const [health, stocks, env, pulse] = await Promise.all([
-      api('/api/health'), api('/api/stocks'), api('/api/repository/status'), api('/api/market/overview')
-    ]);
-    $('repoPath').textContent = health.monitored_repository;
-    setBadge($('modeBadge'), 'LOCAL OFFLINE MODE', 'good');
-    $('symbol').innerHTML = stocks.results.map(s => `<option value="${s.symbol}">${s.symbol} — ${s.name}</option>`).join('');
-    $('symbol').value = stocks.default_symbol;
-    $('interval').value = String(stocks.default_interval);
-    renderEnvironment(env);
-    renderPulse(pulse);
-  } catch (e) {
-    showAlert($('globalAlert'), e.message, 'error');
-  }
-}
-
-function renderEnvironment(s) {
-  const stale = s.state === 'STALE';
-  setBadge($('envBadge'), `ENVIRONMENT: ${s.state}`, stale ? 'bad' : s.state === 'CURRENT' ? 'good' : 'neutral');
-  if (stale) {
-    showAlert($('globalAlert'), 'Repository changed since the last accepted scan. Previous model verdicts are stale until the repository is rescanned.', 'error');
-  } else if (s.state === 'READY') {
-    showAlert($('globalAlert'), 'No repository baseline yet. Scan and accept the source environment before trusting a model signal.', 'warn');
-  } else {
-    hideAlert($('globalAlert'));
-  }
-}
-
-function drawChart(candles, pred) {
-  const canvas = $('chart');
-  if (!canvas || !candles?.length) return;
-  const ctx = canvas.getContext('2d');
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const cssW = Math.max(360, canvas.clientWidth || 800);
-  const cssH = 390;
-  canvas.width = Math.round(cssW * dpr);
-  canvas.height = Math.round(cssH * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const data = candles.slice(-60);
-  const highs = data.map(x => x.high);
-  const lows = data.map(x => x.low);
-  const hi = Math.max(...highs, pred.predicted_high);
-  const lo = Math.min(...lows, pred.predicted_low);
-  const pad = Math.max((hi - lo) * 0.08, 0.01);
-  const top = 25, bottom = 22, left = 52, right = 18;
-  const chartH = cssH - top - bottom;
-  const chartW = cssW - left - right;
-  const y = v => top + (hi + pad - v) / (hi - lo + 2 * pad) * chartH;
-  const x = i => left + (i / Math.max(1, data.length - 1)) * chartW;
-
-  ctx.strokeStyle = '#e4eaf1';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i++) {
-    const yy = top + i * chartH / 4;
-    ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(cssW - right, yy); ctx.stroke();
-  }
-
-  data.forEach((d, i) => {
-    const xx = x(i), oy = y(d.open), cy = y(d.close), hy = y(d.high), ly = y(d.low);
-    const up = d.close >= d.open;
-    ctx.strokeStyle = up ? '#138a5b' : '#cc3d4f';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(xx, hy); ctx.lineTo(xx, ly); ctx.stroke();
-    const bw = Math.max(3, chartW / data.length * 0.55);
-    ctx.fillStyle = up ? '#d9f4e8' : '#fde1e5';
-    ctx.fillRect(xx - bw / 2, Math.min(oy, cy), bw, Math.max(2, Math.abs(cy - oy)));
-    ctx.strokeRect(xx - bw / 2, Math.min(oy, cy), bw, Math.max(2, Math.abs(cy - oy)));
+function drawChart(rows){
+  const c=$("chart"),ctx=c.getContext("2d"),dpr=window.devicePixelRatio||1;
+  const rect=c.getBoundingClientRect(); c.width=rect.width*dpr;c.height=rect.height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  const w=rect.width,h=rect.height; ctx.clearRect(0,0,w,h);
+  if(!rows?.length){return}
+  const pad={l:54,r:18,t:18,b:28}; const plotW=w-pad.l-pad.r,plotH=h-pad.t-pad.b;
+  const hi=Math.max(...rows.map(r=>r.high)),lo=Math.min(...rows.map(r=>r.low)); const span=(hi-lo)||1;
+  const py=v=>pad.t+(hi-v)/span*plotH; const sx=i=>pad.l+i/(rows.length-1)*plotW;
+  ctx.strokeStyle="#e5ecf4";ctx.lineWidth=1;ctx.font="11px Inter,Arial";ctx.fillStyle="#72859d";
+  for(let i=0;i<5;i++){const y=pad.t+i/4*plotH;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();ctx.fillText(fmt(hi-(span*i/4),2),6,y+4);}
+  const candleW=Math.max(2,plotW/rows.length*.64);
+  rows.forEach((r,i)=>{
+    const x=sx(i),up=r.close>=r.open,col=up?"#14966a":"#d74a5a";
+    ctx.strokeStyle=col;ctx.fillStyle=up?"#e7f8f1":"#fff0f2";ctx.beginPath();ctx.moveTo(x,py(r.high));ctx.lineTo(x,py(r.low));ctx.stroke();
+    const y1=py(Math.max(r.open,r.close)),y2=py(Math.min(r.open,r.close));
+    ctx.fillRect(x-candleW/2,y1,candleW,Math.max(2,y2-y1));ctx.strokeRect(x-candleW/2,y1,candleW,Math.max(2,y2-y1));
   });
-
-  const lastX = x(data.length - 1);
-  const px = Math.min(cssW - right, lastX + chartW / data.length);
-  ctx.setLineDash([5, 4]);
-  ctx.strokeStyle = '#1769e0';
-  ctx.beginPath(); ctx.moveTo(lastX, y(data[data.length - 1].close)); ctx.lineTo(px, y(pred.predicted_close)); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#1769e0';
-  ctx.beginPath(); ctx.arc(px, y(pred.predicted_close), 4, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#63788f'; ctx.font = '11px sans-serif';
-  ctx.fillText(fmt(hi), 6, top + 4);
-  ctx.fillText(fmt(lo), 6, cssH - bottom);
+  const last=rows[rows.length-1];ctx.fillStyle="#1464ff";ctx.beginPath();ctx.arc(sx(rows.length-1),py(last.close),4,0,Math.PI*2);ctx.fill();
 }
+window.addEventListener("resize",()=>{ if(state.last)drawChart(state.last.candles) });
 
-function renderAnalysis(d) {
-  const v = d.validation;
-  $('chartTitle').textContent = `${d.instrument.symbol} · ${d.interval}m`;
-  $('mCurrent').textContent = fmt(d.current_price);
-  $('mNext').textContent = fmt(d.prediction.predicted_close);
-  $('mHigh').textContent = fmt(d.prediction.predicted_high);
-  $('mLow').textContent = fmt(d.prediction.predicted_low);
-  $('mEod').textContent = fmt(d.prediction.predicted_eod_close);
-  $('mSignal').textContent = d.trusted_signal;
-  $('latencyBadge').textContent = `${d.latency_ms} ms${d.latency_ms < 1500 ? ' · FAST' : ''}`;
-
-  const p = Math.round(d.prediction.probability_up * 100);
-  setBadge($('probBadge'), `MODEL UP ${p}%`, p >= 60 ? 'good' : p <= 40 ? 'bad' : 'warn');
-  setBadge($('newsImpact'), `Impact ${d.news.summary.impact >= 0 ? '+' : ''}${d.news.summary.impact}`, d.news.summary.impact > 0.15 ? 'good' : d.news.summary.impact < -0.15 ? 'bad' : 'warn');
-  setBadge($('gateBadge'), v.gate_met ? `90% GATE PASS · ${v.signal_precision}%` : `90% GATE NOT MET`, v.gate_met ? 'good' : 'warn');
-
-  drawChart(d.candles, d.prediction);
-  $('newsSummary').innerHTML = `
-    <div><b>${d.news.summary.headline_count}</b><span>headlines</span></div>
-    <div><b>${d.news.summary.positive}</b><span>positive</span></div>
-    <div><b>${d.news.summary.negative}</b><span>negative</span></div>
-    <div><b>${d.news.summary.neutral}</b><span>neutral</span></div>`;
-  $('newsList').innerHTML = d.news.articles.map(a => `<div class="news-item"><h4>${a.title}</h4><div class="news-meta">${a.event} · impact ${a.impact}</div></div>`).join('');
-  $('validation').innerHTML = `
-    <div><span>Direction accuracy</span><b>${v.direction_accuracy}%</b><small>overall walk-forward</small></div>
-    <div><span>90% signal precision</span><b>${v.signal_precision}%</b><small>${v.gate_met ? 'gate passed' : 'gate not supported'}</small></div>
-    <div><span>Signal coverage</span><b>${v.signal_coverage}%</b><small>${v.qualified_signals} qualified rows</small></div>
-    <div><span>Next-return MAE</span><b>${v.next_return_mae}</b><small>validation error</small></div>
-    <div><span>Operating threshold</span><b>${v.threshold}</b><small>probability cutoff</small></div>
-    <div><span>Validation rows</span><b>${v.validation_rows}</b><small>strict time split</small></div>`;
-
-  if (d.trust_state === 'STALE') {
-    showAlert($('globalAlert'), `${d.trust_note} The model calculation is shown for inspection, but the trusted signal is REVALIDATE.`, 'error');
-  } else if (!v.gate_met) {
-    showAlert($('globalAlert'), `${v.gate_note} The system will not issue a trusted BUY/SELL signal for this stock/timeframe.`, 'warn');
-  } else {
-    showAlert($('globalAlert'), `${v.gate_note} This is a validation precision gate, not a guarantee of future returns.`, 'success');
-  }
+function renderValidation(v){
+  const items=[
+    ["Direction accuracy",`${v.direction_accuracy}%`],
+    ["Signal precision",`${v.signal_precision}%`],
+    ["Signal coverage",`${v.signal_coverage}%`],
+    ["Return MAE",v.next_return_mae],
+    ["Return R²",v.next_return_r2],
+    ["Validation rows",v.validation_rows],
+    ["Threshold",v.threshold],
+    ["Model",v.classifier_name],
+  ];
+  $("validation").innerHTML=items.map(([a,b])=>`<div class="val"><span>${a}</span><b>${b}</b></div>`).join("");
+  const pass=v.gate_pass;
+  $("gatePill").textContent=pass?"90% GATE: PASS":"90% GATE: FAIL";
+  $("gatePill").className=`gate-pill ${pass?"gate-pass":"gate-fail"}`;
 }
-
-async function analyze(retrain = false) {
-  const button = retrain ? $('retrainBtn') : $('analyzeBtn');
-  try {
-    setBusy(button, true, retrain ? 'RECALIBRATING…' : 'ANALYZING…');
-    const d = await api(`/api/analyze?symbol=${encodeURIComponent($('symbol').value)}&interval=${$('interval').value}&retrain=${retrain}`, {}, retrain ? 30000 : 20000);
-    renderAnalysis(d);
-  } catch (e) {
-    showAlert($('globalAlert'), e.message, 'error');
-  } finally {
-    setBusy(button, false, '');
-  }
+function renderBacktest(b){
+  const items=[
+    ["Signals",b.signals],["Winning signals",b.wins],["Losing signals",b.losses],
+    ["Signal precision",`${b.signal_precision}%`],["Coverage",`${b.coverage_pct}%`],
+    ["Strategy return",`${b.strategy_return_pct}%`],["Buy & hold",`${b.buy_hold_return_pct}%`],
+    ["Max drawdown",`${b.max_drawdown_pct}%`],["Profit factor",b.profit_factor],
+  ];
+  $("backtest").innerHTML=items.map(([a,b])=>`<div class="val"><span>${a}</span><b>${b}</b></div>`).join("");
 }
-
-$('analyzeBtn').addEventListener('click', () => analyze(false));
-$('retrainBtn').addEventListener('click', () => analyze(true));
-
-function renderPulse(d) {
-  $('pulse').innerHTML = d.results.map(r => `<div class="pulse-item"><b>${r.symbol}</b><span>${fmt(r.price)} · <span class="${r.change_pct >= 0 ? 'pos' : 'neg'}">${r.change_pct >= 0 ? '+' : ''}${r.change_pct}%</span></span></div>`).join('');
+function renderNews(n){
+  const s=n.summary||{};
+  $("newsImpact").textContent=`Impact ${Number(s.impact||0)>=0?"+":""}${Number(s.impact||0).toFixed(2)}`;
+  $("newsSummary").innerHTML=[
+    ["Headlines",s.headline_count||0],["Positive",s.positive||0],["Negative",s.negative||0],["Neutral",s.neutral||0]
+  ].map(([a,b])=>`<div><b>${b}</b><span>${a}</span></div>`).join("");
+  $("newsList").innerHTML=(n.articles||[]).map(a=>`<article class="news-item"><strong>${a.title}</strong><div class="news-meta"><span>${a.publisher||""}</span><span>${Number(a.sentiment)>=0?"positive":"negative"}</span></div></article>`).join("");
 }
-async function refreshPulse() {
-  try { renderPulse(await api('/api/market/overview')); }
-  catch (e) { showAlert($('globalAlert'), e.message, 'error'); }
+function renderExplain(p){
+  $("reasons").innerHTML=(p.explanation?.reasons||["No dominant positive reason"]).map(x=>`<div class="reason">✓ ${x}</div>`).join("");
+  $("risks").innerHTML=(p.explanation?.risks||["No major rule-based risk flag"]).map(x=>`<div class="reason risk">⚠ ${x}</div>`).join("");
+  $("regime").textContent=p.regime||"REGIME —";
 }
-$('pulseBtn').addEventListener('click', refreshPulse);
-
-function renderRepo(s) {
-  renderEnvironment(s);
-  setBadge($('envBadge'), `ENVIRONMENT: ${s.state}`, s.state === 'CURRENT' ? 'good' : s.state === 'STALE' ? 'bad' : 'neutral');
-  $('rState').textContent = s.state;
-  $('rFiles').textContent = s.accepted?.files ?? '—';
-  $('rLines').textContent = s.accepted?.lines ?? '—';
-  const findings = s.accepted?.findings || [];
-  $('rCritical').textContent = findings.filter(x => x.severity === 'CRITICAL').length;
-  $('rHigh').textContent = findings.filter(x => x.severity === 'HIGH').length;
-  $('rDeps').textContent = s.accepted?.dependency_files ?? '—';
-  $('acceptedFp').textContent = s.accepted?.fingerprint || 'No baseline';
-  $('liveFp').textContent = s.live_fingerprint;
-  $('changeCounts').innerHTML = `
-    <div><b>${s.changes.added.length}</b><span>added</span></div>
-    <div><b>${s.changes.modified.length}</b><span>modified</span></div>
-    <div><b>${s.changes.removed.length}</b><span>removed</span></div>
-    <div><b>${s.changes.dependencies_changed ? 'YES' : 'NO'}</b><span>dependency change</span></div>`;
-  const changes = [];
-  s.changes.added.forEach(x => changes.push(`<div class="news-item"><strong>ADDED</strong> · ${x}</div>`));
-  s.changes.modified.forEach(x => changes.push(`<div class="news-item"><strong>MODIFIED</strong> · ${x}</div>`));
-  s.changes.removed.forEach(x => changes.push(`<div class="news-item"><strong>REMOVED</strong> · ${x}</div>`));
-  $('changes').innerHTML = changes.join('') || '<div class="news-item">No file-level changes detected.</div>';
-  setBadge($('scanBadge'), s.accepted ? 'ACCEPTED SCAN' : 'NOT SCANNED', s.accepted ? 'good' : 'neutral');
-  $('findings').innerHTML = findings.length
-    ? findings.map(f => `<div class="finding"><div class="sev">${f.severity}</div><div class="cat">${f.category}/${f.rule}</div><div class="msg">${f.message}<br><code>${f.file}:${f.line}</code></div></div>`).join('')
-    : '<div class="news-item">No security or code-quality rules matched the accepted scan.</div>';
+function setTrust(t){
+  $("trustScore").textContent=`${t.score}/100`;
+  $("trustStatus").textContent=t.status;
+  $("overallBadge").textContent=`TRUST: ${t.status}`;
+  const good=t.status==="TRUSTED";const warn=t.status.includes("REVALIDATION")||t.status.includes("NO-TRADE");
+  $("overallBadge").className=`badge ${good?"badge-green":warn?"badge-amber":"badge-red"}`;
+  $("trustChecks").innerHTML=(t.checks||[]).map(x=>`<div class="panel"><span class="eyebrow">${x.name}</span><h2>${x.status}</h2><p>${x.detail}</p></div>`).join("");
 }
-
-async function loadRepo() {
-  try {
-    const [status, history] = await Promise.all([api('/api/repository/status'), api('/api/repository/history')]);
-    renderRepo(status);
-    $('history').innerHTML = history.history.length
-      ? history.history.map(x => `<div class="history-item"><span>${new Date(x.scanned_at).toLocaleString()}</span><code>${x.fingerprint.slice(0, 16)}… · ${x.findings.length} findings</code></div>`).join('')
-      : '<div class="news-item">No accepted scans yet.</div>';
-  } catch (e) {
-    showAlert($('repoAlert'), e.message, 'error');
-  }
+function renderTrustReport(d){
+  const p=d.prediction,repo=d.prediction.environment.repository,data=d.prediction.environment.data;
+  $("trustHeadline").textContent=`${d.instrument.symbol} · ${d.interval}`;
+  $("trustReport").textContent=[
+    "TRUSTGRAPH REPORT",
+    "-----------------",
+    `Market data       : ${data}`,
+    `Repository        : ${repo}`,
+    `Model precision   : ${p.validation.signal_precision}%`,
+    `90% gate          : ${p.validation.gate_pass?"PASS":"FAIL"}`,
+    `Model version     : ${p.validation.model_version}`,
+    `Regime            : ${d.regime.regime}`,
+    `Signal            : ${p.signal}`,
+    `Confidence        : ${p.confidence}%`,
+    "",
+    "Decision:",
+    p.signal==="REVALIDATE"
+      ? "Re-scan and accept the updated environment before treating this result as trusted."
+      : (p.signal==="NO-TRADE"
+        ? "The model intentionally abstained because its trust gates were not satisfied."
+        : "All current trust conditions are satisfied for this paper-analysis signal.")
+  ].join("\n");
 }
-
-async function repoAction(button, text, fn) {
-  try {
-    setBusy(button, true, text);
-    const status = await fn();
-    renderRepo(status);
-    const history = await api('/api/repository/history');
-    $('history').innerHTML = history.history.length
-      ? history.history.map(x => `<div class="history-item"><span>${new Date(x.scanned_at).toLocaleString()}</span><code>${x.fingerprint.slice(0, 16)}… · ${x.findings.length} findings</code></div>`).join('')
-      : '<div class="news-item">No accepted scans yet.</div>';
-  } catch (e) {
-    showAlert($('repoAlert'), e.message, 'error');
-  } finally {
-    setBusy(button, false, '');
-  }
+async function analyze(force=false,full=false){
+  const symbol=$("symbol").value.trim(),interval=$("interval").value;
+  if(!symbol)return;
+  const btn=force?$("retrainBtn"):full?$("fullBtn"):$("analyzeBtn");
+  setBusy(btn,true,force?"RETRAINING…":full?"RUNNING FULL CHECK…":"ANALYZING…");
+  clearMessage("marketMessage");
+  $("signal").textContent="ANALYZING…";
+  try{
+    const d=await api(`${full?"/api/full-analysis":"/api/analyze"}?symbol=${encodeURIComponent(symbol)}&interval=${interval}&retrain=${force}`);
+    state.last=d;
+    $("providerBadge").textContent=`DATA: ${d.data.source}`;
+    $("providerBadge").className="badge "+(d.data.status==="LIVE"?"badge-green":"badge-amber");
+    $("dataState").textContent=d.data.status;
+    $("modelState").textContent=d.model.gate_pass?"PASS":"FAIL";
+    $("repoState").textContent=d.prediction.environment.repository;
+    $("current").textContent=fmt(d.current_price);$("nextClose").textContent=fmt(d.prediction.predicted_close);
+    $("nextHigh").textContent=fmt(d.prediction.predicted_high);$("nextLow").textContent=fmt(d.prediction.predicted_low);
+    $("eodClose").textContent=fmt(d.prediction.predicted_eod_close);$("signal").textContent=d.prediction.signal;
+    $("confidence").textContent=`Confidence ${d.prediction.confidence}%`;
+    $("probability").textContent=`UP ${(d.prediction.probability_up*100).toFixed(1)}%`;
+    drawChart(d.candles);renderValidation(d.model);renderBacktest(d.backtest);renderNews(d.news);renderExplain(d.prediction);
+    setTrust(d.prediction.trust);renderTrustReport(d);
+    message("marketMessage",`Analysis complete · ${d.retrained?"model trained":"cached model reused"} · ${d.data.source}`,"ok");
+  }catch(e){ $("signal").textContent="ERROR"; message("marketMessage",e.message,"err"); }
+  finally{setBusy(btn,false);}
 }
+$("analyzeBtn").onclick=()=>analyze(false,false);
+$("retrainBtn").onclick=()=>analyze(true,false);
+$("fullBtn").onclick=()=>analyze(false,true);
+$("backtestBtn").onclick=()=>state.last?renderBacktest(state.last.backtest):analyze(false,false);
 
-$('scanBtn').addEventListener('click', () => repoAction($('scanBtn'), 'SCANNING…', () => api('/api/repository/scan', {method: 'POST'})));
-$('checkBtn').addEventListener('click', () => repoAction($('checkBtn'), 'CHECKING…', () => api('/api/repository/status')));
-$('simulateBtn').addEventListener('click', () => repoAction($('simulateBtn'), 'SIMULATING…', () => api('/api/repository/simulate-overnight-update', {method: 'POST'})));
-$('resetBtn').addEventListener('click', () => repoAction($('resetBtn'), 'RESETTING…', () => api('/api/repository/reset', {method: 'POST'})));
+async function loadPulse(){
+  setBusy($("pulseBtn"),true,"LOADING…");
+  try{
+    const d=await api("/api/pulse?limit=12");
+    $("pulseGrid").innerHTML=(d.results||[]).map(x=>`<div class="pulse-item"><b>${x.symbol}</b><span>${x.name}</span><div class="${x.change_pct>=0?"pulse-up":"pulse-down"}">${x.change_pct>=0?"+":""}${Number(x.change_pct).toFixed(2)}%</div><small>${fmt(x.price)}</small></div>`).join("");
+  }catch(e){message("marketMessage",e.message,"err")}finally{setBusy($("pulseBtn"),false)}
+}
+$("pulseBtn").onclick=loadPulse;
 
-window.addEventListener('resize', () => {
-  // Redraw the latest chart only when a result exists; resizing never calls the API.
-  if (window.__lastAnalysis) drawChart(window.__lastAnalysis.candles, window.__lastAnalysis.prediction);
-});
-const originalRenderAnalysis = renderAnalysis;
-renderAnalysis = (d) => { window.__lastAnalysis = d; originalRenderAnalysis(d); };
+function renderRepository(d){
+  $("repoPath").textContent=d.source?.path||"—";$("repoStateBig").textContent=d.state;$("repoFiles").textContent=Object.keys(d.current?.files||{}).length;
+  $("securityScore").textContent=`${d.security_score}/100`;$("depChange").textContent=d.impact?.dependency_change?"YES":"NO";$("revalidation").textContent=d.impact?.revalidation||"—";
+  const comps=d.current?.components||{};$("components").innerHTML=Object.entries(comps).map(([k,v])=>`<div class="component"><b>${k.toUpperCase()}</b><div class="hash">${v}</div></div>`).join("")||"<div class='muted'>No tracked components.</div>";
+  $("impactList").innerHTML=(d.impact?.items||[]).slice(0,30).map(x=>`<div class="impact"><span class="tag">${x.impact}</span><b>${x.kind.toUpperCase()} · ${x.path}</b><div class="muted">${x.reason}</div></div>`).join("")||"<div class='muted'>No changes detected.</div>";
+  $("findings").innerHTML=(d.findings||[]).map(f=>`<div class="finding ${f.severity.toLowerCase()}"><b>${f.severity}</b> · ${f.message}<code>${f.file}:${f.line}</code></div>`).join("")||"<div class='muted'>No findings.</div>";
+  if(d.state==="CURRENT"){ $("repoStateBig").style.color="var(--green)"; } else if(d.state==="STALE"){ $("repoStateBig").style.color="var(--red)"; } else { $("repoStateBig").style.color="var(--amber)"; }
+}
+async function repoAction(path,button,label){
+  setBusy(button,true,label);clearMessage("repoMessage");
+  try{const d=await api(path,{method:"POST"});renderRepository(d);message("repoMessage",d.message||`Repository state: ${d.state}`,"ok");}
+  catch(e){message("repoMessage",e.message,"err")} finally{setBusy(button,false);}
+}
+$("acceptBtn").onclick=()=>repoAction("/api/repository/accept",$("acceptBtn"),"ACCEPTING…");
+$("checkBtn").onclick=()=>repoAction("/api/repository/check",$("checkBtn"),"CHECKING…");
+$("simulateBtn").onclick=()=>repoAction("/api/repository/simulate",$("simulateBtn"),"SIMULATING…");
+$("resetBtn").onclick=()=>repoAction("/api/repository/reset",$("resetBtn"),"RESETTING…");
+
+async function loadAudit(){
+  const d=await api("/api/audit?limit=30");
+  $("audit").innerHTML=(d.results||[]).map(x=>`<div class="audit-row"><div><b>${x.event}</b><div class="muted">${x.status}</div></div><span>${new Date(x.ts).toLocaleString()}</span></div>`).join("");
+}
+async function loadJournal(){
+  const d=await api("/api/journal?limit=60");
+  const rows=d.results||[];
+  $("journalTable").innerHTML=`<table class="table"><thead><tr><th>TIME</th><th>SYMBOL</th><th>TF</th><th>SIGNAL</th><th>CONFIDENCE</th><th>PRECISION</th><th>MODEL</th><th>REPO</th></tr></thead><tbody>${
+    rows.map(x=>`<tr><td>${new Date(x.ts).toLocaleString()}</td><td>${x.symbol}</td><td>${x.interval}</td><td>${x.signal}</td><td>${x.confidence??"—"}%</td><td>${x.precision?Number(x.precision*100).toFixed(2):"—"}%</td><td>${x.model_version}</td><td>${x.repo_state}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+$("journalBtn").onclick=loadJournal;
+$("githubBtn").onclick=async ()=>{
+  const url=$("githubUrl").value.trim();
+  if(!url) return message("repoMessage","Enter a public GitHub HTTPS URL.","err");
+  setBusy($("githubBtn"),true,"CLONING…");
+  try{
+    const d=await api(`/api/repository/source/github?url=${encodeURIComponent(url)}`,{method:"POST"});
+    const fresh=await api("/api/repository/check",{method:"POST"});
+    renderRepository(fresh);message("repoMessage","Public GitHub repository cloned and now monitored.","ok");
+  }catch(e){message("repoMessage",e.message,"err")}
+  finally{setBusy($("githubBtn"),false)}
+};
 
 boot();

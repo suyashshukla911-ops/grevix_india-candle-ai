@@ -1,68 +1,93 @@
-# India Candle AI — AfterCode v3
+# India Candle AI — TrustGraph
 
-India Candle AI is an AI-assisted stock-analysis application adapted to the AfterCode **Missing Update Window** challenge.
+A competition-ready evolution of the original India Candle AI stock predictor.
 
-## Product in one sentence
+## What stayed
+The original product goal remains: estimate short-horizon Indian-stock movement from historical market data and present a BUY / SELL / NO-TRADE decision for paper analysis.
 
-**Predict the next market move, but only treat BUY/SELL as trusted when the repository environment is current and the selected model's validation evidence supports a 90% minimum signal-precision gate.**
+The original Tkinter implementation is preserved under `legacy_original/` and is not used by the web application.
 
-## Core product
+## What changed for AfterCode
+The product now asks two questions:
 
-- Offline Indian-equity universe: RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK, SBIN, TATAMOTORS, BHARTIARTL.
-- Timeframes: 5m, 15m, 30m and 60m.
-- Historical OHLCV candles are stored locally for reproducible judging.
-- Walk-forward feature engineering and deterministic gradient-boosting models.
-- Predicts next close, high, low and end-of-day close.
-- Contextual local research/news layer.
-- Validation cards show direction accuracy, signal precision, coverage, threshold and MAE.
-- Model cache makes repeat analysis fast; recalibration explicitly rebuilds the selected model.
+1. What does the model predict?
+2. Can the environment that produced the prediction still be trusted?
 
-## 90% precision policy
+The answer is governed by **TrustGraph**.
 
-The product does **not** claim 90% overall market-direction accuracy. Instead, it uses a strict 90% validation precision gate for selective BUY/SELL signals. When the validation evidence cannot meet that requirement, the product abstains with **NO-TRADE**.
+### TrustGraph gates
+- Market data freshness
+- Model validation / 90% selective-signal precision gate
+- Repository freshness
+- Dependency changes
+- Security / code-quality state
 
-The default demo setup is **TCS / 60m**. On the packaged offline dataset its walk-forward benchmark is 79.35% direction accuracy and 91.43% selective signal precision.
+A qualifying signal is `BUY` or `SELL`. If the model evidence is weak, the system returns `NO-TRADE`. If the data or repository is stale, it returns `REVALIDATE`.
 
-## AfterCode adaptation
+## Yahoo Finance without an API key
+The live provider tries:
+1. `yfinance`
+2. Yahoo chart/search HTTP endpoints
+3. local disk cache
+4. deterministic local demo fallback
 
-The Repository Health view monitors `workspace/monitored_repository` and provides:
+The application does not scrape Yahoo HTML pages to discover symbols. The search layer uses Yahoo's query endpoint and the chart layer uses structured market data. The user can type many NSE/BSE tickers; the resolver tries `.NS` and `.BO`.
 
-- SHA-256 fingerprinting of tracked source/config/dependency files.
-- Added/modified/removed file detection.
-- Dependency-change detection.
-- Security/code-quality findings.
-- Accepted baseline + audit history.
-- `CURRENT → STALE → CURRENT` state transitions.
-- A concrete overnight update simulation.
+For the competition, the local fallback guarantees that the system remains demonstrable without a live Yahoo session.
 
-If the repository changes, stock analysis can still be inspected, but the trusted signal becomes **REVALIDATE** until the repository is rescanned and accepted.
-
-## Why the application feels faster
-
-- Model fitting uses lightweight `HistGradientBoosting*` estimators.
-- Models are cached per stock/timeframe.
-- FastAPI runs analysis in a worker thread instead of blocking the request loop.
-- The frontend no longer makes redundant status calls after every analysis.
-- Repository status/history are fetched in parallel.
-- The chart is rendered locally with Canvas and no external CDN dependency.
-
-## Run
+## Start
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 python -m pip install -r requirements.txt
+copy .env.example .env
 python -m uvicorn app.main:app
 ```
 
 Open `http://127.0.0.1:8000`.
 
-## Tests
+Use **`python -m uvicorn app.main:app`** for judging. No `--reload` is needed.
 
-```powershell
-pytest -q
-```
+## Main demo
+1. Market Predictor → choose `TCS` / `60m` or `RELIANCE` / `15m`.
+2. `ANALYZE STOCK`.
+3. Show prediction, confidence, validation gate, regime, backtest.
+4. TrustGraph tab → show the individual evidence gates.
+5. Repository Health → `SCAN & ACCEPT BASELINE`.
+6. `SIMULATE OVERNIGHT UPDATE`.
+7. The repository becomes `STALE`.
+8. Return to Market Predictor and analyze again → trusted signal becomes `REVALIDATE`.
+9. Repository Health → `SCAN & ACCEPT BASELINE`.
+10. Analyze again → the current environment can become trusted if the 90% model gate passes.
 
-## Submission position
+## Repository modes
+- Local monitored repository (default)
+- Public GitHub repository clone without an API key
+- Optional future GitHub push webhook boundary
 
-The competition version intentionally has no live market API keys and no GitHub token. The local provider boundaries are deliberate so the evaluator can run the full product immediately. Live market/GitHub adapters can be added later without changing the core trust/state logic.
+The application never executes the monitored repository code. It only reads and fingerprints it.
+
+## Additional capabilities
+- automatic threshold optimization
+- market-regime detection
+- deterministic explainability
+- validation-window backtest
+- signal journal
+- model versioning
+- data freshness
+- component fingerprints
+- change-impact analysis
+- overnight change report
+- security score
+- audit trail
+- optional local `bandit` / `pip-audit` integration hooks if those tools are installed
+
+## Disclaimer
+Paper analysis only. No orders are placed. No prediction metric is a guarantee of future profit.
+
+## Production-direction hooks
+- Optional Basic Auth can be enabled with `DEMO_AUTH_ENABLED=true`.
+- `POST /api/webhook/github` accepts GitHub push/ping events; when `GITHUB_WEBHOOK_SECRET` is set, HMAC SHA-256 is verified.
+- If `bandit` is installed locally, repository scanning imports its findings.
+- If `pip-audit` is installed locally, dependency vulnerabilities are imported.
