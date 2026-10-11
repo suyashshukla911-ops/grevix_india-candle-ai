@@ -1,110 +1,38 @@
 const $ = (id) => document.getElementById(id);
-const repo = "overnight_demo";
+const fmt = (n, d=2) => Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+async function api(url, options={}) { const r = await fetch(url, options); const j = await r.json(); if(!r.ok) throw new Error(j.detail || 'Request failed'); return j; }
+function showAlert(el, msg, kind='') { el.textContent = msg; el.className = `alert ${kind}`.trim(); el.classList.remove('hidden'); }
+function hideAlert(el) { el.classList.add('hidden'); }
+function setBadge(el, text, kind='neutral') { el.textContent = text; el.className = `badge ${kind}`; }
+function switchView(view) { document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active', x.id === `${view}View`)); document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active', x.dataset.view === view)); if(view==='repo') loadRepo(); }
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>switchView('repo')));
 
-function esc(value){
-  return String(value ?? "").replace(/[&<>\"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
-}
-function timeLabel(value){ return value ? new Date(value).toLocaleString("en-IN", {dateStyle:"medium", timeStyle:"short"}) : "—"; }
-
-async function json(url, options={}){
-  const r = await fetch(url, options);
-  const body = await r.json();
-  if(!r.ok) throw new Error(body.detail || "Request failed");
-  return body;
-}
-
-function renderStatus(status){
-  const stale = status.stale;
-  const change = status.change || {};
-  const live = status.current || {};
-  const last = status.last_scan;
-  const acceptedFingerprint = last?.fingerprint;
-
-  $("files").textContent = live.file_count ?? "—";
-  $("lines").textContent = (live.total_lines ?? 0).toLocaleString("en-IN");
-  $("critical").textContent = live.summary?.critical ?? 0;
-  $("high").textContent = live.summary?.high ?? 0;
-  $("low").textContent = live.summary?.low ?? 0;
-  $("deps").textContent = live.dependency_files?.length ?? 0;
-  $("fingerprint").textContent = live.fingerprint ? live.fingerprint.slice(0, 18) + "…" : "—";
-  $("last-scan").textContent = last ? `${last.scan_id} · ${timeLabel(last.scanned_at)}` : "No accepted baseline";
-  $("live-state").textContent = stale ? "CHANGED SINCE BASELINE" : (last ? "MATCHES BASELINE" : "AWAITING FIRST SCAN");
-
-  const card = $("status-card");
-  card.className = "status-card " + (stale ? "stale" : last ? "current" : "neutral");
-  $("status-title").textContent = stale ? "RESULTS STALE" : last ? "BASELINE CURRENT" : "READY TO SCAN";
-  $("status-copy").textContent = stale
-    ? "The repository changed after the last accepted scan. The old result is kept for auditability but must not be treated as current."
-    : last
-      ? "No repository delta is detected. The last accepted scan still matches the live content fingerprint."
-      : "Run the first scan to establish the repository baseline.";
-
-  $("scan-age").textContent = last ? `Last scan ${timeLabel(last.scanned_at)}` : "No scan yet";
-  $("finding-state").textContent = stale ? "STALE" : last ? "CURRENT" : "UNSCANNED";
-  $("finding-state").className = "pill " + (stale ? "pill-bad" : last ? "pill-good" : "");
-
-  const items = [
-    ["Added", change.added?.length || 0],
-    ["Modified", change.modified?.length || 0],
-    ["Removed", change.removed?.length || 0],
-    ["Dependencies", change.dependency_changed ? "CHANGED" : "UNCHANGED"]
-  ];
-  $("change-summary").innerHTML = items.map(([a,b]) => `<div><span>${a}</span><b>${esc(b)}</b></div>`).join("");
-  const files = [...(change.added || []).map(x=>["+",x]), ...(change.modified || []).map(x=>["~",x]), ...(change.removed || []).map(x=>["−",x])];
-  $("changed-files").innerHTML = files.length
-    ? files.map(([mark,path]) => `<div class="file-delta"><b>${mark}</b><span>${esc(path)}</span></div>`).join("")
-    : `<div class="muted">No file-level changes detected.</div>`;
-
-  const findings = live.findings || [];
-  $("findings").innerHTML = findings.length ? findings.map(f => `<article class="finding ${esc(f.severity)}">
-    <div class="finding-top"><span class="severity">${esc(f.severity.toUpperCase())}</span><span class="category">${esc(f.category)}</span></div>
-    <h3>${esc(f.title)}</h3>
-    <div class="finding-meta">${esc(f.path)}${f.line ? `:${f.line}` : ""}</div>
-    <p>${esc(f.detail)}</p>
-  </article>`).join("") : `<div class="empty">No security or code-quality rules matched the current repository.</div>`;
+async function boot(){
+  try{
+    const h=await api('/api/health'); $('repoPath').textContent=h.monitored_repository; setBadge($('modeBadge'),'LOCAL OFFLINE MODE','good');
+    const stocks=await api('/api/stocks'); $('symbol').innerHTML=stocks.results.map(s=>`<option value="${s.symbol}">${s.symbol} — ${s.name}</option>`).join('');
+    await loadEnv(); await refreshPulse();
+  }catch(e){ showAlert($('staleAlert'),e.message,'error'); }
 }
 
-async function refresh(){
-  try { renderStatus(await json(`/api/repository?name=${repo}`)); await renderHistory(); }
-  catch(e){ $("status-title").textContent="ERROR"; $("status-copy").textContent=e.message; }
-}
+async function loadEnv(){ const s=await api('/api/repository/status'); const stale=s.state==='STALE'; setBadge($('envBadge'),`ENVIRONMENT: ${s.state}`,stale?'bad':s.state==='CURRENT'?'good':'neutral'); if(stale){showAlert($('staleAlert'),'Repository changed since the last accepted scan. Any previous model verdict is STALE. Rescan the repository before trusting a new signal.','error')} else hideAlert($('staleAlert')); return s; }
 
-async function scan(){
-  setBusy(true, "Running scan…");
-  try { const data = await json(`/api/repository/scan?name=${repo}`, {method:"POST"}); renderStatus(data.status); await renderHistory(); }
-  catch(e){ alert(e.message); }
-  finally { setBusy(false); }
-}
+function drawChart(candles,pred){
+ const canvas=$('chart'), ctx=canvas.getContext('2d'), w=canvas.width=canvas.clientWidth*2, h=canvas.height=430*2; ctx.setTransform(2,0,0,2,0,0); const cw=canvas.clientWidth, ch=430; ctx.clearRect(0,0,cw,ch); const data=candles.slice(-60); const highs=data.map(x=>x.high), lows=data.map(x=>x.low); const hi=Math.max(...highs,pred.predicted_high), lo=Math.min(...lows,pred.predicted_low), pad=(hi-lo)*.08; const top=35,bottom=24,left=40,right=20, chartH=ch-top-bottom, chartW=cw-left-right; const y=v=>top+(hi+pad-v)/(hi-lo+2*pad)*chartH, x=i=>left+(i/(data.length-1))*chartW; ctx.strokeStyle='#e7edf4';ctx.lineWidth=1; for(let i=0;i<5;i++){let yy=top+i*(chartH/4);ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(cw-right,yy);ctx.stroke()} data.forEach((d,i)=>{const xx=x(i), oy=y(d.open), cy=y(d.close), hy=y(d.high), ly=y(d.low); ctx.strokeStyle=d.close>=d.open?'#138a5b':'#cc3d4f';ctx.beginPath();ctx.moveTo(xx,hy);ctx.lineTo(xx,ly);ctx.stroke(); const bw=Math.max(3,chartW/data.length*.55);ctx.fillStyle=d.close>=d.open?'#d9f4e8':'#fde1e5';ctx.strokeStyle=d.close>=d.open?'#138a5b':'#cc3d4f';ctx.fillRect(xx-bw/2,Math.min(oy,cy),bw,Math.max(2,Math.abs(cy-oy)));ctx.strokeRect(xx-bw/2,Math.min(oy,cy),bw,Math.max(2,Math.abs(cy-oy)));}); const lastX=x(data.length-1); const px=Math.min(cw-right,lastX+chartW/data.length);ctx.setLineDash([5,4]);ctx.strokeStyle='#1769e0';ctx.beginPath();ctx.moveTo(lastX,y(data[data.length-1].close));ctx.lineTo(px,y(pred.predicted_close));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#1769e0';ctx.beginPath();ctx.arc(px,y(pred.predicted_close),4,0,Math.PI*2);ctx.fill(); ctx.fillStyle='#63788f';ctx.font='11px sans-serif';ctx.fillText(fmt(hi),6,top+4);ctx.fillText(fmt(lo),6,ch-bottom); }
 
-async function simulate(){
-  setBusy(true, "Applying overnight update…");
-  try { const data = await json(`/api/repository/simulate-update?name=${repo}`, {method:"POST"}); renderStatus(data.status); await renderHistory(); }
-  catch(e){ alert(e.message); }
-  finally { setBusy(false); }
-}
+function renderAnalysis(d){ $('chartTitle').textContent=`${d.instrument.symbol} · ${d.interval}m`; $('mCurrent').textContent=fmt(d.current_price); $('mNext').textContent=fmt(d.prediction.predicted_close); $('mHigh').textContent=fmt(d.prediction.predicted_high); $('mLow').textContent=fmt(d.prediction.predicted_low); $('mEod').textContent=fmt(d.prediction.predicted_eod_close); $('mSignal').textContent=d.trusted_signal; const p=Math.round(d.prediction.probability_up*100); setBadge($('probBadge'),`UP ${p}%`,p>=60?'good':p<=40?'bad':'warn'); setBadge($('newsImpact'),`Impact ${d.news.summary.impact>=0?'+':''}${d.news.summary.impact}`,d.news.summary.impact>0.15?'good':d.news.summary.impact<-0.15?'bad':'warn'); drawChart(d.candles,d.prediction); $('newsSummary').innerHTML=`<div><b>${d.news.summary.headline_count}</b><span>headlines</span></div><div><b>${d.news.summary.positive}</b><span>positive</span></div><div><b>${d.news.summary.negative}</b><span>negative</span></div><div><b>${d.news.summary.neutral}</b><span>neutral</span></div>`; $('newsList').innerHTML=d.news.articles.map(a=>`<div class="news-item"><h4>${a.title}</h4><div class="news-meta">${a.event} · impact ${a.impact}</div></div>`).join(''); const v=d.validation; $('validation').innerHTML=`<div><span>Direction accuracy</span><b>${v.direction_accuracy}%</b></div><div><span>Signal precision</span><b>${v.signal_precision}%</b></div><div><span>Signal coverage</span><b>${v.signal_coverage}%</b></div><div><span>Next-return MAE</span><b>${v.next_return_mae}</b></div><div><span>Threshold</span><b>${v.threshold}</b></div><div><span>Validation rows</span><b>${v.validation_rows}</b></div>`; if(d.trust_state==='STALE') showAlert($('staleAlert'),`${d.trust_note} The market calculation is shown for inspection, but the trusted signal is REVALIDATE.`,'error'); else hideAlert($('staleAlert')); }
 
-async function reset(){
-  setBusy(true, "Resetting demo…");
-  try { const data = await json(`/api/repository/reset?name=${repo}`, {method:"POST"}); renderStatus(data.status); await renderHistory(); }
-  catch(e){ alert(e.message); }
-  finally { setBusy(false); }
-}
+async function analyze(retrain=false){ try{ $('analyzeBtn').disabled=true; const d=await api(`/api/analyze?symbol=${encodeURIComponent($('symbol').value)}&interval=${$('interval').value}&retrain=${retrain}`); renderAnalysis(d); await loadEnv(); }catch(e){showAlert($('staleAlert'),e.message,'error')}finally{$('analyzeBtn').disabled=false;} }
+$('analyzeBtn').addEventListener('click',()=>analyze(false)); $('retrainBtn').addEventListener('click',()=>analyze(true));
 
-async function renderHistory(){
-  const data = await json(`/api/history?name=${repo}`);
-  const rows = (data.history || []).slice().reverse();
-  $("history").innerHTML = rows.length ? rows.map((x,i) => `<div class="history-row">
-    <div class="timeline-dot"></div><div><b>${esc(x.scan_id)}</b><span>${timeLabel(x.scanned_at)}</span></div>
-    <div class="history-stats"><span>${x.file_count} files</span><span>${x.summary.total} findings</span><code>${esc((x.fingerprint||"").slice(0,12))}</code></div>
-  </div>`).join("") : `<div class="empty">No accepted scans yet. The challenge starts with a clean baseline.</div>`;
-}
+async function refreshPulse(){ const d=await api('/api/market/overview'); $('pulse').innerHTML=d.results.map(r=>`<div class="pulse-item"><b>${r.symbol}</b><span>${fmt(r.price)} · <span class="${r.change_pct>=0?'pos':'neg'}">${r.change_pct>=0?'+':''}${r.change_pct}%</span></span></div>`).join(''); } $('pulseBtn').addEventListener('click',refreshPulse);
 
-function setBusy(busy, text=""){
-  for(const id of ["run-scan","simulate","reset"]) $(id).disabled = busy;
-  if(text) $("status-title").textContent = text;
-}
+function renderRepo(s){ setBadge($('envBadge'),`ENVIRONMENT: ${s.state}`,s.state==='CURRENT'?'good':s.state==='STALE'?'bad':'neutral'); $('rState').textContent=s.state; $('rFiles').textContent=s.accepted?.files ?? '—'; $('rLines').textContent=s.accepted?.lines ?? '—'; const f=s.accepted?.findings||[]; $('rCritical').textContent=f.filter(x=>x.severity==='CRITICAL').length; $('rHigh').textContent=f.filter(x=>x.severity==='HIGH').length; $('rDeps').textContent=s.accepted?.dependency_files ?? '—'; $('acceptedFp').textContent=s.accepted?.fingerprint||'No baseline'; $('liveFp').textContent=s.live_fingerprint; $('changeCounts').innerHTML=`<div><b>${s.changes.added.length}</b><span>added</span></div><div><b>${s.changes.modified.length}</b><span>modified</span></div><div><b>${s.changes.removed.length}</b><span>removed</span></div><div><b>${s.changes.dependencies_changed?'YES':'NO'}</b><span>dependency change</span></div>`; const lines=[]; s.changes.added.forEach(x=>lines.push(`<div class="news-item"><strong>ADDED</strong> · ${x}</div>`)); s.changes.modified.forEach(x=>lines.push(`<div class="news-item"><strong>MODIFIED</strong> · ${x}</div>`)); s.changes.removed.forEach(x=>lines.push(`<div class="news-item"><strong>REMOVED</strong> · ${x}</div>`)); $('changes').innerHTML=lines.join('')||'<div class="news-item">No file-level changes detected.</div>'; if(s.state==='STALE') showAlert($('repoAlert'),s.message,'error'); else if(s.state==='CURRENT') showAlert($('repoAlert'),'Live repository matches the accepted baseline. Findings are current.','success'); else hideAlert($('repoAlert')); }
 
-$("run-scan").addEventListener("click", scan);
-$("simulate").addEventListener("click", simulate);
-$("reset").addEventListener("click", reset);
-refresh();
+async function loadRepo(){ try{ const s=await api('/api/repository/status'); renderRepo(s); const accepted=s.accepted; const fs=accepted?.findings||[]; setBadge($('scanBadge'),accepted?'ACCEPTED SCAN':'NOT SCANNED',accepted?'good':'neutral'); $('findings').innerHTML=fs.length?fs.map(f=>`<div class="finding"><div class="sev ${f.severity==='HIGH'||f.severity==='CRITICAL'?'neg':f.severity==='MEDIUM'?'pos':''}">${f.severity}</div><div class="cat">${f.category}/${f.rule}</div><div class="msg">${f.message}<br><code>${f.file}:${f.line}</code></div></div>`).join(''):'<div class="news-item">No security or code-quality rules matched the accepted scan.</div>'; const h=await api('/api/repository/history'); $('history').innerHTML=h.history.length?h.history.map(x=>`<div class="history-item"><span>${new Date(x.scanned_at).toLocaleString()}</span><code>${x.fingerprint.slice(0,16)}… · ${x.findings.length} findings</code></div>`).join(''):'<div class="news-item">No accepted scans yet.</div>'; }catch(e){showAlert($('repoAlert'),e.message,'error')} }
+$('scanBtn').addEventListener('click',async()=>{try{await api('/api/repository/scan',{method:'POST'}); await loadRepo(); await loadEnv(); showAlert($('repoAlert'),'Scan accepted. The new fingerprint is now the trusted baseline.','success')}catch(e){showAlert($('repoAlert'),e.message,'error')}});
+$('checkBtn').addEventListener('click',loadRepo);
+$('simulateBtn').addEventListener('click',async()=>{try{await api('/api/repository/simulate-overnight-update',{method:'POST'}); await loadRepo(); await loadEnv(); switchView('repo')}catch(e){showAlert($('repoAlert'),e.message,'error')}});
+$('resetBtn').addEventListener('click',async()=>{try{await api('/api/repository/reset',{method:'POST'}); await loadRepo(); await loadEnv()}catch(e){showAlert($('repoAlert'),e.message,'error')}});
+boot();

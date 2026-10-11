@@ -1,9 +1,8 @@
-.env
 .venv/
 __pycache__/
-*.py[cod]
 .pytest_cache/
-data_state/*.json
-demo_repos/overnight_demo/src/*.pyc
+*.pyc
+.env
 .DS_Store
-Thumbs.db
+*.log
+data/sentinel_state.json

@@ -1,103 +1,47 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Repository Sentinel — Missing Update Window</title>
-  <link rel="stylesheet" href="/static/styles.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>India Candle AI</title><link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 <header class="topbar">
-  <div>
-    <div class="eyebrow">AFTERCODE / CHALLENGE CARD</div>
-    <div class="brand">REPOSITORY SENTINEL</div>
-    <div class="sub">Security + code quality with update-aware results</div>
-  </div>
-  <div class="top-status">
-    <span id="mode" class="mode-badge">OFFLINE / NO API KEYS</span>
-    <span id="scan-age" class="muted">No scan yet</span>
-  </div>
+  <div class="brand-wrap"><div class="eyebrow">AFTERCODE ADAPTATION</div><div class="brand">INDIA CANDLE AI</div><div class="sub">Market prediction + repository freshness</div></div>
+  <div class="top-status"><span id="modeBadge" class="badge">LOCAL OFFLINE MODE</span><span id="envBadge" class="badge neutral">ENVIRONMENT: CHECKING</span></div>
 </header>
-
+<nav class="nav"><button class="nav-btn active" data-view="market">Market Predictor</button><button class="nav-btn" data-view="repo">Repository Health</button></nav>
 <main class="shell">
-  <section class="hero">
-    <div>
-      <div class="eyebrow">THE MISSING UPDATE WINDOW</div>
-      <h1>Never confuse an old scan with the current repository.</h1>
-      <p>Every scan creates a content fingerprint. When files, dependencies, or configuration change, the previous verdict becomes visibly stale until a new scan establishes a fresh baseline.</p>
-      <div class="hero-actions">
-        <button id="run-scan" class="btn primary">RUN CURRENT SCAN</button>
-        <button id="simulate" class="btn challenge">SIMULATE OVERNIGHT UPDATE</button>
-        <button id="reset" class="btn ghost">RESET DEMO</button>
-      </div>
-    </div>
-    <div id="status-card" class="status-card">
-      <div class="status-label">REPOSITORY STATUS</div>
-      <div id="status-title" class="status-title">Loading…</div>
-      <div id="status-copy" class="status-copy">Calculating the current fingerprint.</div>
-      <div id="delta" class="delta"></div>
-    </div>
-  </section>
+<section id="marketView" class="view active">
+  <div class="hero two-col">
+    <div><div class="eyebrow">CORE PRODUCT</div><h1>Predict the next move without pretending yesterday's model is still trustworthy.</h1><p>India Candle AI learns from local historical candles, estimates the next candle range, adds contextual news impact, and now checks whether the source environment has changed since the last accepted scan.</p></div>
+    <div class="info-card"><div class="label">WHAT CHANGED FOR AFTERCODE</div><h3>Predictions are tied to environment freshness.</h3><p>A repository change invalidates the previously trusted verdict until the updated source is rescanned.</p><button class="link-btn" data-go="repo">View repository health →</button></div>
+  </div>
+  <div class="control-card">
+    <label>Stock<select id="symbol"></select></label><label>Timeframe<select id="interval"><option value="5">5m</option><option value="15">15m</option><option value="30">30m</option><option value="60">60m</option></select></label>
+    <button id="analyzeBtn" class="btn primary">ANALYZE STOCK</button><button id="retrainBtn" class="btn secondary">RETRAIN MODEL</button>
+  </div>
+  <div id="staleAlert" class="alert hidden"></div>
+  <div class="metrics"><div><span>Current</span><strong id="mCurrent">—</strong></div><div><span>Next close</span><strong id="mNext">—</strong></div><div><span>Next high</span><strong id="mHigh">—</strong></div><div><span>Next low</span><strong id="mLow">—</strong></div><div><span>EOD close</span><strong id="mEod">—</strong></div><div class="signal"><span>Trusted signal</span><strong id="mSignal">—</strong></div></div>
+  <div class="grid two">
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MARKET PATH</div><h2 id="chartTitle">Select a stock</h2></div><div id="probBadge" class="badge neutral">Probability —</div></div><canvas id="chart" width="900" height="430"></canvas><div id="chartLegend" class="legend"><span>Recent candles</span><span>Predicted next close</span></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">NEWS CONTEXT</div><h2>Local research layer</h2></div><div id="newsImpact" class="badge neutral">Impact —</div></div><div id="newsSummary" class="summary-grid"></div><div id="newsList" class="list"></div></section>
+  </div>
+  <div class="grid two">
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MODEL VALIDATION</div><h2>Measured, not guaranteed</h2></div></div><div id="validation" class="validation-grid"></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MARKET PULSE</div><h2>Local universe</h2></div><button id="pulseBtn" class="btn secondary small">REFRESH</button></div><div id="pulse" class="pulse-grid"></div></section>
+  </div>
+</section>
 
-  <section class="metrics">
-    <div class="metric"><span>Files</span><strong id="files">—</strong></div>
-    <div class="metric"><span>Lines</span><strong id="lines">—</strong></div>
-    <div class="metric danger"><span>Critical</span><strong id="critical">—</strong></div>
-    <div class="metric warn"><span>High</span><strong id="high">—</strong></div>
-    <div class="metric"><span>Low</span><strong id="low">—</strong></div>
-    <div class="metric"><span>Dependency files</span><strong id="deps">—</strong></div>
-  </section>
-
-  <section class="grid">
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <div class="eyebrow">CURRENT CONTENT</div>
-          <h2>Repository fingerprint</h2>
-        </div>
-        <span id="fingerprint" class="hash">—</span>
-      </div>
-      <div class="fingerprint-box">
-        <div><span>Last accepted scan</span><b id="last-scan">—</b></div>
-        <div><span>Current live state</span><b id="live-state">—</b></div>
-      </div>
-      <div class="how">
-        <div class="how-step"><b>01</b><span>Hash every tracked file.</span></div>
-        <div class="how-step"><b>02</b><span>Compare the live fingerprint to the accepted scan.</span></div>
-        <div class="how-step"><b>03</b><span>Invalidate the old verdict when content changes.</span></div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <div><div class="eyebrow">CHANGE WINDOW</div><h2>What changed?</h2></div>
-      </div>
-      <div id="change-summary" class="change-summary"></div>
-      <div id="changed-files" class="changed-files"></div>
-    </div>
-  </section>
-
-  <section class="panel findings-panel">
-    <div class="panel-head">
-      <div>
-        <div class="eyebrow">SECURITY / CODE QUALITY</div>
-        <h2>Live findings</h2>
-      </div>
-      <span id="finding-state" class="pill">UNSCANNED</span>
-    </div>
-    <div id="findings" class="findings"></div>
-  </section>
-
-  <section class="panel timeline-panel">
-    <div class="panel-head"><div><div class="eyebrow">AUDIT TRAIL</div><h2>Accepted scan history</h2></div></div>
-    <div id="history" class="history"></div>
-  </section>
-
-  <footer>
-    <span>Offline proof-of-concept · local repository only · no GitHub/API credentials required</span>
-    <span>Repository Sentinel v2.0</span>
-  </footer>
+<section id="repoView" class="view">
+  <div class="hero two-col"><div><div class="eyebrow">THE MISSING UPDATE WINDOW</div><h1>Never confuse an old repository scan with the repository that exists now.</h1><p>The sentinel fingerprints tracked files, compares the live repository with the last accepted baseline, and keeps old findings visibly stale until a fresh scan is accepted.</p></div><div class="info-card"><div class="label">MONITORED WORKSPACE</div><code id="repoPath">—</code><p>Offline now. The provider boundary is designed so a GitHub adapter can replace the local snapshot later without changing the dashboard logic.</p></div></div>
+  <div id="repoAlert" class="alert hidden"></div>
+  <div class="repo-actions"><button id="scanBtn" class="btn primary">SCAN & ACCEPT BASELINE</button><button id="checkBtn" class="btn secondary">CHECK FOR UPDATES</button><button id="simulateBtn" class="btn secondary">SIMULATE OVERNIGHT UPDATE</button><button id="resetBtn" class="btn danger">RESET WORKSPACE</button></div>
+  <div class="metrics repo-metrics"><div><span>Repository state</span><strong id="rState">—</strong></div><div><span>Files</span><strong id="rFiles">—</strong></div><div><span>Lines</span><strong id="rLines">—</strong></div><div><span>Critical</span><strong id="rCritical">—</strong></div><div><span>High</span><strong id="rHigh">—</strong></div><div><span>Dependencies</span><strong id="rDeps">—</strong></div></div>
+  <div class="grid two"><section class="panel"><div class="eyebrow">CONTENT FINGERPRINT</div><h2>Accepted vs live</h2><div class="fingerprints"><div><span>Accepted</span><code id="acceptedFp">—</code></div><div><span>Live</span><code id="liveFp">—</code></div></div><div id="changeCounts" class="summary-grid"></div></section><section class="panel"><div class="eyebrow">CHANGE WINDOW</div><h2>What changed?</h2><div id="changes" class="list"></div></section></div>
+  <section class="panel"><div class="panel-head"><div><div class="eyebrow">SECURITY / CODE QUALITY</div><h2>Findings from the accepted scan</h2></div><div id="scanBadge" class="badge neutral">NOT SCANNED</div></div><div id="findings" class="finding-list"></div></section>
+  <section class="panel"><div class="eyebrow">AUDIT HISTORY</div><h2>Previous accepted scans</h2><div id="history" class="history-list"></div></section>
+</section>
 </main>
+<footer><span>Paper analysis only — no orders are placed.</span><span>India Candle AI v2 · offline competition build</span></footer>
 <script src="/static/app.js"></script>
-</body>
-</html>
+</body></html>

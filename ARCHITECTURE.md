@@ -1,27 +1,16 @@
-# Repository Sentinel architecture
+# Architecture
 
-```text
-Browser
-  |
-  +--> FastAPI API
-          |
-          +--> Local Repository Provider (demo_repos/)
-          |
-          +--> Scanner
-          |      +-- file manifest + SHA-256 fingerprint
-          |      +-- security rules
-          |      +-- quality rules
-          |      +-- dependency-file tracking
-          |
-          +--> State Store
-                 +-- last accepted scan
-                 +-- current live scan
-                 +-- audit history
-                 +-- stale comparison
-```
+Browser UI → FastAPI → Market Engine + Repository Sentinel
 
-## Core invariant
+## Market path
+LocalMarketStore → feature engineering → ExtraTrees model → prediction + local news overlay → freshness gate
 
-`accepted_scan.fingerprint == live_scan.fingerprint` means the accepted result is current.
+## Freshness path
+LocalRepositoryProvider → fingerprint + manifest → security/code-quality scan → accepted baseline → live comparison → CURRENT/STALE
 
-Any mismatch means `STALE`. The system never silently overwrites the accepted result just because the repository changed.
+## Key state rule
+`live_fingerprint != accepted_fingerprint` means the prior scan is stale.
+The old findings are retained for audit but are never presented as current.
+
+## Extension boundary
+A future `GitHubRepositoryProvider` can expose the same `root/list/read` semantics used by the local workspace. No dashboard redesign is required.
