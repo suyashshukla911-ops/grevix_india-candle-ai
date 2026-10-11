@@ -4,7 +4,7 @@ India Candle AI is an AI-assisted market-intelligence platform for Indian listed
 
 ## Live application
 
-- Render: https://india-candle-ai-aftercode.onrender.com/
+- Render: https://grevix-india-candle-ai.onrender.com/
 - GitHub: https://github.com/suyashshukla911-ops/grevix_india-candle-ai
 
 ## The product problem

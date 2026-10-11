@@ -30,7 +30,7 @@ The source tree contains 27 regression tests. A 27/27 run was completed during t
 
 ## Render
 Live demo:
-https://india-candle-ai-aftercode.onrender.com/
+https://grevix-india-candle-ai.onrender.com/
 
 Render uses `render.yaml`. Set `ADMIN_PASSWORD`, `GITHUB_WEBHOOK_SECRET` and `MODEL_ARTIFACT_KEY` as appropriate in the Render service configuration.
 
