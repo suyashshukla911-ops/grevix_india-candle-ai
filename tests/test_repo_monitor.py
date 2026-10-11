@@ -26,3 +26,21 @@ def test_manifest_marks_modified_repository_as_changed(tmp_path: Path):
     delta = compare_manifests(accepted, second)
     assert delta["changed"] is True
     assert "app.py" in delta["modified"]
+
+
+def test_seed_demo_does_not_reset_existing_target(tmp_path, monkeypatch):
+    import app.demo as demo
+
+    demo_root = tmp_path / "demo_repos"
+    canonical = demo_root / "overnight_demo_seed"
+    target = demo_root / "overnight_demo"
+    monkeypatch.setattr(demo, "DEMO_ROOT", demo_root)
+    monkeypatch.setattr(demo, "CANONICAL", canonical)
+    monkeypatch.setattr(demo, "TARGET", target)
+
+    demo.seed_demo()
+    marker = target / "marker.txt"
+    marker.write_text("do not reset", encoding="utf-8")
+
+    demo.seed_demo()
+    assert marker.read_text(encoding="utf-8") == "do not reset"

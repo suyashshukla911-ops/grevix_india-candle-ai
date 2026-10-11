@@ -18,7 +18,7 @@ This competition build is an **offline-first repository security + code-quality 
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app
 ```
 
 Open:
@@ -57,3 +57,14 @@ This is a proof of concept, not a production SAST engine or a CVE database. The 
 ## Python 3.14 / Windows timezone note
 
 The project includes `tzdata` in `requirements.txt` because some Python 3.14 Windows installations do not ship the IANA timezone database. The app also has an India Standard Time (+05:30) fallback so the local demo can still start if `tzdata` is temporarily unavailable.
+
+
+### Optional development reload
+
+If you need Uvicorn auto-reload during development, restrict the watched directories so the mutable demo repository does not trigger restarts:
+
+```powershell
+python -m uvicorn app.main:app --reload --reload-dir app --reload-dir frontend
+```
+
+Do not use a project-wide `--reload` for the challenge demo. The demo intentionally changes files to simulate the overnight update window.

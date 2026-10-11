@@ -2,7 +2,7 @@
 
 ## 90-second live demonstration
 
-1. Start the app and open `http://127.0.0.1:8000`.
+1. Start the app with `python -m uvicorn app.main:app` and open `http://127.0.0.1:8000`.
 2. Click **RUN CURRENT SCAN**. Explain that this creates the accepted baseline fingerprint.
 3. Click **SIMULATE OVERNIGHT UPDATE**. The live repository changes immediately without accepting a new scan.
 4. Point to **RESULTS STALE** and the **What changed?** panel. The dashboard shows the modified application file, a new file, and a dependency-file change.
@@ -25,3 +25,10 @@
 ## Submission positioning
 
 Describe the product as an **update-aware security/code-quality monitor** rather than a full SAST/CVE platform. The differentiator for this challenge is the state model: **live repository state vs. accepted scan state** and the resulting automatic stale-result invalidation.
+
+
+## Windows / Uvicorn note
+
+Run the competition demo without project-wide `--reload` because the demo intentionally modifies files. For development auto-reload, use:
+
+`python -m uvicorn app.main:app --reload --reload-dir app --reload-dir frontend`

@@ -9,15 +9,30 @@ CANONICAL = DEMO_ROOT / "overnight_demo_seed"
 TARGET = DEMO_ROOT / "overnight_demo"
 
 
-def seed_demo() -> Path:
-    CANONICAL.mkdir(parents=True, exist_ok=True)
-    (CANONICAL / "src").mkdir(exist_ok=True)
-    (CANONICAL / "tests").mkdir(exist_ok=True)
+def _write_canonical_if_missing() -> None:
+    """Create the immutable demo seed only when it is missing.
+
+    Importing the application must never rewrite the demo repository because
+    Uvicorn's development reloader may watch the project directory.
+    """
+    required = [
+        CANONICAL / "README.md",
+        CANONICAL / "requirements.txt",
+        CANONICAL / "src" / "app.py",
+        CANONICAL / "tests" / "test_app.py",
+    ]
+    if all(path.exists() for path in required):
+        return
+
+    (CANONICAL / "src").mkdir(parents=True, exist_ok=True)
+    (CANONICAL / "tests").mkdir(parents=True, exist_ok=True)
     (CANONICAL / "README.md").write_text(
         "# Atlas Web\n\nDemo repository for the Missing Update Window challenge.\n",
         encoding="utf-8",
     )
-    (CANONICAL / "requirements.txt").write_text("fastapi==0.115.6\n", encoding="utf-8")
+    (CANONICAL / "requirements.txt").write_text(
+        "fastapi==0.115.6\n", encoding="utf-8"
+    )
     (CANONICAL / "src" / "app.py").write_text(
         "def health():\n    return {'ok': True}\n\n\ndef add(a, b):\n    return a + b\n",
         encoding="utf-8",
@@ -26,13 +41,19 @@ def seed_demo() -> Path:
         "def test_health():\n    assert True\n",
         encoding="utf-8",
     )
-    reset_demo()
+
+
+def seed_demo() -> Path:
+    """Ensure the local demo exists without changing an existing demo state."""
+    _write_canonical_if_missing()
+    if not TARGET.exists():
+        shutil.copytree(CANONICAL, TARGET)
     return TARGET
 
 
 def reset_demo() -> Path:
-    if not CANONICAL.exists():
-        return seed_demo()
+    """Explicitly restore the live demo from the immutable seed snapshot."""
+    _write_canonical_if_missing()
     if TARGET.exists():
         shutil.rmtree(TARGET)
     shutil.copytree(CANONICAL, TARGET)
@@ -40,6 +61,7 @@ def reset_demo() -> Path:
 
 
 def simulate_overnight_update() -> Path:
+    """Apply a deterministic, intentionally unsafe overnight change."""
     TARGET.mkdir(parents=True, exist_ok=True)
     app = TARGET / "src" / "app.py"
     existing = app.read_text(encoding="utf-8") if app.exists() else ""
@@ -51,7 +73,9 @@ def simulate_overnight_update() -> Path:
             encoding="utf-8",
         )
     req = TARGET / "requirements.txt"
-    req.write_text(req.read_text(encoding="utf-8") + "\nrequests==2.31.0\n", encoding="utf-8")
+    current_requirements = req.read_text(encoding="utf-8") if req.exists() else ""
+    if "requests==2.31.0" not in current_requirements:
+        req.write_text(current_requirements.rstrip() + "\nrequests==2.31.0\n", encoding="utf-8")
     (TARGET / "src" / "feature_flags.py").write_text(
         "FEATURE_FLAG = 'nightly-rollout'\n",
         encoding="utf-8",
