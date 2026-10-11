@@ -1,0 +1,106 @@
+{
+  "current_scan": {
+    "repository": "overnight_demo",
+    "root": "C:\\Users\\Suyash Shukla\\Desktop\\india_candle_ai\\demo_repos\\overnight_demo",
+    "fingerprint": "636cd09118e4c830676b80f69770b69332faceab400b8db15a51794b8e00445b",
+    "scanned_at": "2026-10-11T08:40:30+05:30",
+    "file_count": 4,
+    "total_lines": 12,
+    "dependency_files": [
+      "requirements.txt"
+    ],
+    "files": [
+      {
+        "path": "README.md",
+        "size": 73,
+        "sha256": "5a99ca3eef54ff5cf8a3ab205ca83ffb1834614e65c08aeba9d81f90f7b5eab7",
+        "lines": 3
+      },
+      {
+        "path": "requirements.txt",
+        "size": 18,
+        "sha256": "d3afcb1451b5026396db61f18e03bbd969edaae2830ce7c005481de65417651c",
+        "lines": 1
+      },
+      {
+        "path": "src/app.py",
+        "size": 78,
+        "sha256": "a61b361ab806b199c07de85e446ef9dc436c83bf5ef056029566bcda4a4963da",
+        "lines": 6
+      },
+      {
+        "path": "tests/test_app.py",
+        "size": 37,
+        "sha256": "3cfe88c366969b3638228b92d37823b37ff28fd3697b4cbcc332e30106da0ae3",
+        "lines": 2
+      }
+    ],
+    "findings": [],
+    "summary": {
+      "critical": 0,
+      "high": 0,
+      "low": 0,
+      "total": 0
+    },
+    "scan_id": "scan-0001"
+  },
+  "last_scan": {
+    "repository": "overnight_demo",
+    "root": "C:\\Users\\Suyash Shukla\\Desktop\\india_candle_ai\\demo_repos\\overnight_demo",
+    "fingerprint": "636cd09118e4c830676b80f69770b69332faceab400b8db15a51794b8e00445b",
+    "scanned_at": "2026-10-11T08:40:30+05:30",
+    "file_count": 4,
+    "total_lines": 12,
+    "dependency_files": [
+      "requirements.txt"
+    ],
+    "files": [
+      {
+        "path": "README.md",
+        "size": 73,
+        "sha256": "5a99ca3eef54ff5cf8a3ab205ca83ffb1834614e65c08aeba9d81f90f7b5eab7",
+        "lines": 3
+      },
+      {
+        "path": "requirements.txt",
+        "size": 18,
+        "sha256": "d3afcb1451b5026396db61f18e03bbd969edaae2830ce7c005481de65417651c",
+        "lines": 1
+      },
+      {
+        "path": "src/app.py",
+        "size": 78,
+        "sha256": "a61b361ab806b199c07de85e446ef9dc436c83bf5ef056029566bcda4a4963da",
+        "lines": 6
+      },
+      {
+        "path": "tests/test_app.py",
+        "size": 37,
+        "sha256": "3cfe88c366969b3638228b92d37823b37ff28fd3697b4cbcc332e30106da0ae3",
+        "lines": 2
+      }
+    ],
+    "findings": [],
+    "summary": {
+      "critical": 0,
+      "high": 0,
+      "low": 0,
+      "total": 0
+    },
+    "scan_id": "scan-0001"
+  },
+  "history": [
+    {
+      "scan_id": "scan-0001",
+      "scanned_at": "2026-10-11T08:40:30+05:30",
+      "fingerprint": "636cd09118e4c830676b80f69770b69332faceab400b8db15a51794b8e00445b",
+      "summary": {
+        "critical": 0,
+        "high": 0,
+        "low": 0,
+        "total": 0
+      },
+      "file_count": 4
+    }
+  ]
+}

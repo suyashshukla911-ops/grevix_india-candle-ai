@@ -2,125 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>India Candle AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repository Sentinel — Missing Update Window</title>
   <link rel="stylesheet" href="/static/styles.css">
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
+<header class="topbar">
+  <div>
+    <div class="eyebrow">AFTERCODE / CHALLENGE CARD</div>
+    <div class="brand">REPOSITORY SENTINEL</div>
+    <div class="sub">Security + code quality with update-aware results</div>
+  </div>
+  <div class="top-status">
+    <span id="mode" class="mode-badge">OFFLINE / NO API KEYS</span>
+    <span id="scan-age" class="muted">No scan yet</span>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="hero">
     <div>
-      <div class="brand">INDIA CANDLE AI</div>
-      <div class="sub">Intraday candles · news impact · walk-forward ML</div>
+      <div class="eyebrow">THE MISSING UPDATE WINDOW</div>
+      <h1>Never confuse an old scan with the current repository.</h1>
+      <p>Every scan creates a content fingerprint. When files, dependencies, or configuration change, the previous verdict becomes visibly stale until a new scan establishes a fresh baseline.</p>
+      <div class="hero-actions">
+        <button id="run-scan" class="btn primary">RUN CURRENT SCAN</button>
+        <button id="simulate" class="btn challenge">SIMULATE OVERNIGHT UPDATE</button>
+        <button id="reset" class="btn ghost">RESET DEMO</button>
+      </div>
     </div>
-    <div class="top-actions">
-      <span id="status" class="status">Checking connection…</span>
-      <a class="btn ghost" href="/auth/upstox/start">Connect Upstox</a>
+    <div id="status-card" class="status-card">
+      <div class="status-label">REPOSITORY STATUS</div>
+      <div id="status-title" class="status-title">Loading…</div>
+      <div id="status-copy" class="status-copy">Calculating the current fingerprint.</div>
+      <div id="delta" class="delta"></div>
     </div>
-  </header>
+  </section>
 
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <h1>Predict the next candle. Re-price the session as new information arrives.</h1>
-        <p>India-only NSE/BSE universe. 1–300 minute candles, current-session refresh, and a news-impact layer that is explicitly separated from the market model.</p>
-      </div>
-      <div class="warning">
-        <strong>Accuracy gate</strong>
-        <span>The UI shows measured validation precision/accuracy, not fabricated certainty. No market model can guarantee 100% future accuracy.</span>
-      </div>
-    </section>
+  <section class="metrics">
+    <div class="metric"><span>Files</span><strong id="files">—</strong></div>
+    <div class="metric"><span>Lines</span><strong id="lines">—</strong></div>
+    <div class="metric danger"><span>Critical</span><strong id="critical">—</strong></div>
+    <div class="metric warn"><span>High</span><strong id="high">—</strong></div>
+    <div class="metric"><span>Low</span><strong id="low">—</strong></div>
+    <div class="metric"><span>Dependency files</span><strong id="deps">—</strong></div>
+  </section>
 
-    <section class="control-card">
-      <div class="field">
-        <label>Stock / company</label>
-        <input id="symbol" list="priority-list" placeholder="HDFCBANK, Meesho, Tata Motors…">
-        <datalist id="priority-list"></datalist>
-      </div>
-      <div class="field small">
-        <label>Timeframe</label>
-        <select id="interval">
-          <option value="1">1m</option>
-          <option value="2">2m</option>
-          <option value="3">3m</option>
-          <option value="5" selected>5m</option>
-          <option value="10">10m</option>
-          <option value="15">15m</option>
-          <option value="30">30m</option>
-          <option value="60">1h</option>
-        </select>
-      </div>
-      <button id="analyze" class="btn primary">ANALYZE</button>
-      <button id="retrain" class="btn ghost">RETRAIN</button>
-    </section>
-
-    <section class="metrics">
-      <div class="metric"><span>Current</span><strong id="current">—</strong></div>
-      <div class="metric"><span>Next close</span><strong id="next-close">—</strong></div>
-      <div class="metric"><span>Next high</span><strong id="next-high">—</strong></div>
-      <div class="metric"><span>Next low</span><strong id="next-low">—</strong></div>
-      <div class="metric"><span>EOD close</span><strong id="eod-close">—</strong></div>
-      <div class="metric signal"><span>Signal</span><strong id="signal">—</strong></div>
-    </section>
-
-    <section class="grid">
-      <div class="panel chart-panel">
-        <div class="panel-head">
-          <div>
-            <h2 id="title">Chart</h2>
-            <span id="timestamp" class="muted">—</span>
-          </div>
-          <div id="probability" class="pill">UP —</div>
-        </div>
-        <div id="chart"></div>
-      </div>
-
-      <div class="panel news-panel">
-        <div class="panel-head">
-          <div>
-            <h2>News impact</h2>
-            <span class="muted">24h</span>
-          </div>
-          <div id="news-score" class="pill">Impact —</div>
-        </div>
-        <div id="news-summary" class="news-summary"></div>
-        <div id="news-list" class="news-list"></div>
-      </div>
-    </section>
-
-    <section class="panel pulse-panel">
+  <section class="grid">
+    <div class="panel">
       <div class="panel-head">
         <div>
-          <h2>India market pulse</h2>
-          <span class="muted">Full NSE/BSE quote universe · ranked by absolute intraday change</span>
+          <div class="eyebrow">CURRENT CONTENT</div>
+          <h2>Repository fingerprint</h2>
         </div>
-        <button id="pulse" class="btn ghost">REFRESH PULSE</button>
+        <span id="fingerprint" class="hash">—</span>
       </div>
-      <div id="pulse-grid" class="pulse-grid"></div>
-    </section>
-
-    <section class="grid lower">
-      <div class="panel">
-        <div class="panel-head"><h2>Validation</h2></div>
-        <div class="validation" id="validation"></div>
+      <div class="fingerprint-box">
+        <div><span>Last accepted scan</span><b id="last-scan">—</b></div>
+        <div><span>Current live state</span><b id="live-state">—</b></div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Why the system is different</h2></div>
-        <div class="explain">
-          <div><b>1. Exchange data</b><span>Upstox candles and quotes replace Yahoo/stooq scraping.</span></div>
-          <div><b>2. Session-aware</b><span>Overnight gap and time-of-day are features; the next day does not assume the prior close is the open.</span></div>
-          <div><b>3. News is contextual</b><span>Sentiment + event type + source quality + recency are scored separately from the market model.</span></div>
-          <div><b>4. No-trade gate</b><span>The model can refuse to issue a BUY/SELL when validation probability is weak or news conflicts.</span></div>
-        </div>
+      <div class="how">
+        <div class="how-step"><b>01</b><span>Hash every tracked file.</span></div>
+        <div class="how-step"><b>02</b><span>Compare the live fingerprint to the accepted scan.</span></div>
+        <div class="how-step"><b>03</b><span>Invalidate the old verdict when content changes.</span></div>
       </div>
-    </section>
+    </div>
 
-    <footer>
-      <span>Paper-analysis only. No order placement is included in this build.</span>
-      <span>India Candle AI v1</span>
-    </footer>
-  </main>
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="eyebrow">CHANGE WINDOW</div><h2>What changed?</h2></div>
+      </div>
+      <div id="change-summary" class="change-summary"></div>
+      <div id="changed-files" class="changed-files"></div>
+    </div>
+  </section>
 
+  <section class="panel findings-panel">
+    <div class="panel-head">
+      <div>
+        <div class="eyebrow">SECURITY / CODE QUALITY</div>
+        <h2>Live findings</h2>
+      </div>
+      <span id="finding-state" class="pill">UNSCANNED</span>
+    </div>
+    <div id="findings" class="findings"></div>
+  </section>
+
+  <section class="panel timeline-panel">
+    <div class="panel-head"><div><div class="eyebrow">AUDIT TRAIL</div><h2>Accepted scan history</h2></div></div>
+    <div id="history" class="history"></div>
+  </section>
+
+  <footer>
+    <span>Offline proof-of-concept · local repository only · no GitHub/API credentials required</span>
+    <span>Repository Sentinel v2.0</span>
+  </footer>
+</main>
 <script src="/static/app.js"></script>
 </body>
 </html>

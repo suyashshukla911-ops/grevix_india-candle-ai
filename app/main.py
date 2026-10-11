@@ -1,32 +1,77 @@
-
 from __future__ import annotations
 
-import secrets
 from pathlib import Path
-from typing import Optional
-from urllib.parse import quote
+from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.config import PRIORITY_STOCKS, settings
-from app.data.news import NewsService
-from app.data.upstox import UpstoxClient, UpstoxError
-from app.services.engine import AnalysisEngine
-
+from app.demo import reset_demo, seed_demo, simulate_overnight_update
+from app.repo_monitor.scanner import compare_manifests, scan_repository
+from app.repo_monitor.state import RepositoryState
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = BASE_DIR / "frontend"
+STATE_ROOT = BASE_DIR / "data_state"
+seed_demo()
+DEMO_ROOT = BASE_DIR / "demo_repos"
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
+app = FastAPI(title="Repository Sentinel", version="2.0.0")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
-upstox = UpstoxClient(settings.upstox_access_token, cache_dir=str(BASE_DIR / "data_cache"))
-news = NewsService(settings.news_max_records)
-engine = AnalysisEngine(upstox, news)
 
-oauth_states: set[str] = set()
+def _state_for(path: Path) -> RepositoryState:
+    repo_state = STATE_ROOT / path.name
+    return RepositoryState(repo_state)
+
+
+def _live(repo_path: Path) -> dict[str, Any]:
+    live = scan_repository(repo_path)
+    state = _state_for(repo_path)
+    previous = state.latest()
+    change = compare_manifests(previous, live)
+    return {"stale": bool(previous and change["changed"]), "current": live, "last_scan": previous, "change": change}
+
+
+def _public_scan(scan: dict | None) -> dict | None:
+    if not scan:
+        return None
+    return {
+        "scan_id": scan.get("scan_id"),
+        "scanned_at": scan.get("scanned_at"),
+        "fingerprint": scan.get("fingerprint"),
+        "summary": scan.get("summary"),
+        "file_count": scan.get("file_count"),
+        "total_lines": scan.get("total_lines"),
+        "dependency_files": scan.get("dependency_files", []),
+        "findings": scan.get("findings", []),
+    }
+
+
+def _public_live(status: dict) -> dict:
+    live = status["current"]
+    change = status["change"]
+    return {
+        "stale": status["stale"],
+        "repository": live["repository"],
+        "root": live["root"],
+        "fingerprint": live["fingerprint"],
+        "file_count": live["file_count"],
+        "total_lines": live["total_lines"],
+        "dependency_files": live["dependency_files"],
+        "summary": live["summary"],
+        "change": change,
+        "findings": live["findings"],
+    }
+
+
+def _repo_path(name: str = "overnight_demo") -> Path:
+    safe = Path(name).name
+    path = DEMO_ROOT / safe
+    if path.resolve().parent != DEMO_ROOT.resolve() or not path.exists():
+        raise HTTPException(404, "Demo repository not found.")
+    return path.resolve()
 
 
 @app.get("/", include_in_schema=False)
@@ -38,157 +83,62 @@ def index():
 def health():
     return {
         "ok": True,
-        "upstox_connected": bool(upstox.access_token),
-        "news_provider": settings.news_provider,
-        "default_interval": settings.default_interval,
+        "mode": "offline",
+        "api_keys_required": False,
+        "demo_repository": "overnight_demo",
+        "message": "All challenge flows run against local repository snapshots. No GitHub or market API is required.",
     }
 
 
-@app.get("/api/priority")
-def priority():
-    return {"stocks": PRIORITY_STOCKS}
+@app.get("/api/repository")
+def repository(name: str = "overnight_demo"):
+    path = _repo_path(name)
+    return _public_live(_live(path))
 
 
-@app.get("/api/stocks")
-def stocks(q: str = Query("", max_length=80), limit: int = Query(25, ge=1, le=50)):
-    if not q.strip():
-        # Return the user's priority universe first without hardcoding instrument keys.
-        out = []
-        for item in PRIORITY_STOCKS:
-            try:
-                ins = upstox.resolve_symbol(item["symbol"])
-            except Exception:
-                continue
-            out.append({
-                "name": ins.name,
-                "symbol": ins.trading_symbol,
-                "exchange": ins.exchange,
-                "instrument_key": ins.instrument_key,
-            })
-        return {"results": out}
-
-    try:
-        matches = upstox.search_instruments(q, limit=limit)
-    except UpstoxError as exc:
-        raise HTTPException(503, str(exc))
+@app.post("/api/repository/scan")
+def repository_scan(name: str = "overnight_demo"):
+    path = _repo_path(name)
+    result = scan_repository(path)
+    saved = _state_for(path).record_scan(result)
     return {
-        "results": [
-            {
-                "name": x.name,
-                "short_name": x.short_name,
-                "symbol": x.trading_symbol,
-                "exchange": x.exchange,
-                "segment": x.segment,
-                "instrument_key": x.instrument_key,
-            }
-            for x in matches
-        ]
+        "ok": True,
+        "scan": _public_scan(saved),
+        "status": _public_live(_live(path)),
+        "message": "Scan completed. These findings are now the current baseline until the repository changes.",
     }
 
 
+@app.post("/api/repository/simulate-update")
+def repository_simulate_update(name: str = "overnight_demo"):
+    path = _repo_path(name)
+    simulate_overnight_update()
+    return {
+        "ok": True,
+        "status": _public_live(_live(path)),
+        "message": "Simulated overnight repository changes. No scan was automatically accepted as current; the dashboard now marks the previous result STALE.",
+    }
 
 
-@app.get("/api/universe")
-def universe():
-    try:
-        items = upstox.load_instruments()
-        nse = sum(x.exchange == "NSE" for x in items)
-        bse = sum(x.exchange == "BSE" for x in items)
-        return {"total_equities": len(items), "nse": nse, "bse": bse}
-    except Exception as exc:
-        raise HTTPException(503, str(exc))
+@app.post("/api/repository/reset")
+def repository_reset(name: str = "overnight_demo"):
+    path = _repo_path(name)
+    reset_demo()
+    # Preserve history, but make the live state visible as changed until the user explicitly rescans.
+    return {
+        "ok": True,
+        "status": _public_live(_live(path)),
+        "message": "Demo repository restored. Run a scan to establish a fresh baseline.",
+    }
 
 
-@app.get("/api/market-pulse")
-def market_pulse(limit: int = Query(50, ge=10, le=200)):
-    try:
-        items = upstox.load_instruments()
-        keys = [x.instrument_key for x in items]
-        quotes = upstox.get_quote_batch(keys)
-    except UpstoxError as exc:
-        raise HTTPException(503, str(exc))
-    except Exception as exc:
-        raise HTTPException(500, str(exc))
-
-    rows = []
-    by_key = {x.instrument_key: x for x in items}
-    for key, q in quotes.items():
-        ins = by_key.get(key)
-        if not ins:
-            continue
-        ohlc = q.get("ohlc") or {}
-        last = q.get("last_price")
-        if last is None:
-            last = ohlc.get("close")
-        prev = q.get("prev_close_price")
-        net = q.get("net_change")
-        if net is None and last is not None and prev:
-            net = last - prev
-        change_pct = (net / prev * 100) if (net is not None and prev) else None
-        rows.append({
-            "symbol": ins.trading_symbol,
-            "name": ins.name,
-            "exchange": ins.exchange,
-            "instrument_key": ins.instrument_key,
-            "price": last,
-            "change": net,
-            "change_pct": change_pct,
-            "volume": q.get("volume") or ohlc.get("volume"),
-            "year_high": q.get("year_high"),
-            "year_low": q.get("year_low"),
-        })
-    rows = [r for r in rows if r["price"] is not None and r["change_pct"] is not None]
-    rows.sort(key=lambda r: abs(r["change_pct"]), reverse=True)
-    return {"count": len(rows), "results": rows[:limit]}
-
-
-@app.get("/api/analyze")
-def analyze(
-    symbol: str = Query(..., min_length=1, max_length=100),
-    interval: int = Query(settings.default_interval, ge=1, le=300),
-    retrain: bool = False,
-):
-    try:
-        instrument = upstox.resolve_symbol(symbol)
-        return engine.analyze(instrument, interval=interval, force_retrain=retrain)
-    except UpstoxError as exc:
-        raise HTTPException(503, str(exc))
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    except Exception as exc:
-        raise HTTPException(500, f"Analysis failed: {exc}")
-
-
-@app.get("/auth/upstox/start")
-def upstox_start():
-    if not settings.upstox_client_id or not settings.upstox_redirect_uri:
-        raise HTTPException(503, "Set UPSTOX_CLIENT_ID and UPSTOX_REDIRECT_URI in .env first.")
-    state = secrets.token_urlsafe(24)
-    oauth_states.add(state)
-    url = upstox.authorization_url(settings.upstox_client_id, settings.upstox_redirect_uri, state)
-    return RedirectResponse(url)
-
-
-@app.get("/auth/upstox/callback")
-def upstox_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
-    if error:
-        return RedirectResponse(f"/?auth_error={quote(error)}")
-    if not code or state not in oauth_states:
-        raise HTTPException(400, "Invalid OAuth callback.")
-    oauth_states.discard(state)
-    try:
-        token = upstox.exchange_code(
-            code=code,
-            client_id=settings.upstox_client_id,
-            client_secret=settings.upstox_client_secret,
-            redirect_uri=settings.upstox_redirect_uri,
-        )
-    except Exception as exc:
-        return RedirectResponse(f"/?auth_error={quote(str(exc))}")
-    # Token is held in server memory for this process. For production, use a secrets store/database.
-    return RedirectResponse("/?connected=1")
+@app.get("/api/history")
+def history(name: str = "overnight_demo"):
+    path = _repo_path(name)
+    state = _state_for(path)
+    return {"history": state.data.get("history", [])[-10:]}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
