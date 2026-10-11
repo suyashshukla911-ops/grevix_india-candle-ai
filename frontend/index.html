@@ -2,38 +2,45 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>India Candle AI</title><link rel="stylesheet" href="/static/styles.css">
+<title>India Candle AI · AfterCode</title>
+<link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand-wrap"><div class="eyebrow">AFTERCODE ADAPTATION</div><div class="brand">INDIA CANDLE AI</div><div class="sub">Market prediction + repository freshness</div></div>
-  <div class="top-status"><span id="modeBadge" class="badge">LOCAL OFFLINE MODE</span><span id="envBadge" class="badge neutral">ENVIRONMENT: CHECKING</span></div>
+  <div class="brand-wrap"><div class="eyebrow">AFTERCODE ADAPTATION</div><div class="brand">INDIA CANDLE AI</div><div class="sub">AI market prediction + environment freshness</div></div>
+  <div class="top-status"><span id="modeBadge" class="badge good">LOCAL OFFLINE MODE</span><span id="envBadge" class="badge neutral">ENVIRONMENT: CHECKING</span></div>
 </header>
-<nav class="nav"><button class="nav-btn active" data-view="market">Market Predictor</button><button class="nav-btn" data-view="repo">Repository Health</button></nav>
+<nav class="nav">
+  <button class="nav-btn active" data-view="market">Market Predictor</button>
+  <button class="nav-btn" data-view="repo">Repository Health</button>
+</nav>
 <main class="shell">
 <section id="marketView" class="view active">
   <div class="hero two-col">
-    <div><div class="eyebrow">CORE PRODUCT</div><h1>Predict the next move without pretending yesterday's model is still trustworthy.</h1><p>India Candle AI learns from local historical candles, estimates the next candle range, adds contextual news impact, and now checks whether the source environment has changed since the last accepted scan.</p></div>
-    <div class="info-card"><div class="label">WHAT CHANGED FOR AFTERCODE</div><h3>Predictions are tied to environment freshness.</h3><p>A repository change invalidates the previously trusted verdict until the updated source is rescanned.</p><button class="link-btn" data-go="repo">View repository health →</button></div>
+    <div><div class="eyebrow">CORE PRODUCT</div><h1>Predict the next move — and know when the prediction environment has gone stale.</h1><p>India Candle AI uses local historical candles, a walk-forward model, a strict 90% validation precision gate, and repository freshness checks. It abstains instead of inventing confidence.</p></div>
+    <div class="info-card"><div class="label">AFTERCODE CHANGE</div><h3>Predictions are trust-gated.</h3><p>If the monitored source or dependencies change, the trusted signal becomes REVALIDATE until a new repository baseline is accepted.</p><button class="link-btn" data-go="repo">View repository health →</button></div>
   </div>
+  <div id="globalAlert" class="alert hidden"></div>
   <div class="control-card">
-    <label>Stock<select id="symbol"></select></label><label>Timeframe<select id="interval"><option value="5">5m</option><option value="15">15m</option><option value="30">30m</option><option value="60">60m</option></select></label>
-    <button id="analyzeBtn" class="btn primary">ANALYZE STOCK</button><button id="retrainBtn" class="btn secondary">RETRAIN MODEL</button>
+    <label>Stock<select id="symbol"></select></label>
+    <label>Timeframe<select id="interval"><option value="5">5m</option><option value="15">15m</option><option value="30">30m</option><option value="60">60m</option></select></label>
+    <button id="analyzeBtn" class="btn primary">ANALYZE STOCK</button>
+    <button id="retrainBtn" class="btn secondary">RECALIBRATE MODEL</button>
   </div>
-  <div id="staleAlert" class="alert hidden"></div>
+  <div class="trust-strip"><div><span>DECISION STANDARD</span><strong>90% minimum signal precision</strong><small>Measured on a strict time-ordered validation window; not a guarantee of future returns.</small></div><div><span>PERFORMANCE</span><strong id="latencyBadge">—</strong><small>Cached model per stock/timeframe after the first analysis.</small></div><div><span>GATE</span><strong id="gateBadge">90% validation gate</strong><small>When the gate is not supported, the product abstains with NO-TRADE.</small></div></div>
   <div class="metrics"><div><span>Current</span><strong id="mCurrent">—</strong></div><div><span>Next close</span><strong id="mNext">—</strong></div><div><span>Next high</span><strong id="mHigh">—</strong></div><div><span>Next low</span><strong id="mLow">—</strong></div><div><span>EOD close</span><strong id="mEod">—</strong></div><div class="signal"><span>Trusted signal</span><strong id="mSignal">—</strong></div></div>
   <div class="grid two">
-    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MARKET PATH</div><h2 id="chartTitle">Select a stock</h2></div><div id="probBadge" class="badge neutral">Probability —</div></div><canvas id="chart" width="900" height="430"></canvas><div id="chartLegend" class="legend"><span>Recent candles</span><span>Predicted next close</span></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MARKET PATH</div><h2 id="chartTitle">Select a stock</h2></div><div id="probBadge" class="badge neutral">MODEL UP —</div></div><canvas id="chart" width="900" height="390"></canvas><div class="legend"><span>Recent candles</span><span>Predicted next close</span></div></section>
     <section class="panel"><div class="panel-head"><div><div class="eyebrow">NEWS CONTEXT</div><h2>Local research layer</h2></div><div id="newsImpact" class="badge neutral">Impact —</div></div><div id="newsSummary" class="summary-grid"></div><div id="newsList" class="list"></div></section>
   </div>
   <div class="grid two">
-    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MODEL VALIDATION</div><h2>Measured, not guaranteed</h2></div></div><div id="validation" class="validation-grid"></div></section>
+    <section class="panel"><div class="panel-head"><div><div class="eyebrow">MODEL VALIDATION</div><h2>Walk-forward, measured</h2></div></div><div id="validation" class="validation-grid"></div></section>
     <section class="panel"><div class="panel-head"><div><div class="eyebrow">MARKET PULSE</div><h2>Local universe</h2></div><button id="pulseBtn" class="btn secondary small">REFRESH</button></div><div id="pulse" class="pulse-grid"></div></section>
   </div>
 </section>
 
 <section id="repoView" class="view">
-  <div class="hero two-col"><div><div class="eyebrow">THE MISSING UPDATE WINDOW</div><h1>Never confuse an old repository scan with the repository that exists now.</h1><p>The sentinel fingerprints tracked files, compares the live repository with the last accepted baseline, and keeps old findings visibly stale until a fresh scan is accepted.</p></div><div class="info-card"><div class="label">MONITORED WORKSPACE</div><code id="repoPath">—</code><p>Offline now. The provider boundary is designed so a GitHub adapter can replace the local snapshot later without changing the dashboard logic.</p></div></div>
+  <div class="hero two-col"><div><div class="eyebrow">THE MISSING UPDATE WINDOW</div><h1>Never confuse an old repository scan with the repository that exists now.</h1><p>The sentinel fingerprints tracked files, compares the live repository with the accepted baseline, shows exactly what changed, and keeps old findings visibly stale until a fresh scan is accepted.</p></div><div class="info-card"><div class="label">MONITORED WORKSPACE</div><code id="repoPath">—</code><p>Offline for competition. A GitHub adapter can replace the local provider later without changing the dashboard state machine.</p></div></div>
   <div id="repoAlert" class="alert hidden"></div>
   <div class="repo-actions"><button id="scanBtn" class="btn primary">SCAN & ACCEPT BASELINE</button><button id="checkBtn" class="btn secondary">CHECK FOR UPDATES</button><button id="simulateBtn" class="btn secondary">SIMULATE OVERNIGHT UPDATE</button><button id="resetBtn" class="btn danger">RESET WORKSPACE</button></div>
   <div class="metrics repo-metrics"><div><span>Repository state</span><strong id="rState">—</strong></div><div><span>Files</span><strong id="rFiles">—</strong></div><div><span>Lines</span><strong id="rLines">—</strong></div><div><span>Critical</span><strong id="rCritical">—</strong></div><div><span>High</span><strong id="rHigh">—</strong></div><div><span>Dependencies</span><strong id="rDeps">—</strong></div></div>
@@ -42,6 +49,6 @@
   <section class="panel"><div class="eyebrow">AUDIT HISTORY</div><h2>Previous accepted scans</h2><div id="history" class="history-list"></div></section>
 </section>
 </main>
-<footer><span>Paper analysis only — no orders are placed.</span><span>India Candle AI v2 · offline competition build</span></footer>
+<footer><span>Paper analysis only — no orders are placed.</span><span>India Candle AI v3 · offline competition build</span></footer>
 <script src="/static/app.js"></script>
 </body></html>

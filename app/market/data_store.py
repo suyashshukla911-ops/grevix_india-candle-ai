@@ -12,9 +12,11 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 MARKET_DIR = BASE_DIR / "data" / "market"
 NEWS_FILE = BASE_DIR / "data" / "news.json"
 
+
 class OfflineMarketStore:
     def __init__(self) -> None:
         self._cache: dict[str, pd.DataFrame] = {}
+        self._interval_cache: dict[tuple[str, int], pd.DataFrame] = {}
         MARKET_DIR.mkdir(parents=True, exist_ok=True)
         self._ensure_files()
 
@@ -47,15 +49,15 @@ class OfflineMarketStore:
             volume = rng.integers(80000, 650000, len(times))
             frames.append(pd.DataFrame({"timestamp": times, "open": open_, "high": high, "low": low, "close": close, "volume": volume}))
             base = float(close[-1])
-        out = pd.concat(frames, ignore_index=True)
-        out.to_csv(path, index=False)
+        pd.concat(frames, ignore_index=True).to_csv(path, index=False)
 
     def symbols(self) -> list[dict[str, Any]]:
         return PRIORITY_STOCKS
 
     def _load(self, symbol: str) -> pd.DataFrame:
         symbol = symbol.upper().strip()
-        if symbol not in {x["symbol"] for x in PRIORITY_STOCKS}:
+        valid = {x["symbol"] for x in PRIORITY_STOCKS}
+        if symbol not in valid:
             raise ValueError(f"Offline universe does not contain {symbol}")
         if symbol not in self._cache:
             df = pd.read_csv(MARKET_DIR / f"{symbol.lower()}.csv", parse_dates=["timestamp"])
@@ -65,20 +67,22 @@ class OfflineMarketStore:
         return self._cache[symbol].copy()
 
     def candles(self, symbol: str, interval: int = 5) -> pd.DataFrame:
-        base = self._load(symbol)
+        key = (symbol.upper().strip(), interval)
+        if key in self._interval_cache:
+            return self._interval_cache[key].copy()
+        base = self._load(key[0])
         if interval == 5:
-            return base
-        if interval not in {15, 30, 60}:
-            raise ValueError("Offline mode supports 5m, 15m, 30m and 60m intervals.")
-        base = base.set_index("timestamp")
-        rule = f"{interval}min"
-        agg = base.resample(rule, origin="start_day", offset="9h15min").agg({
-            "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-        }).dropna().reset_index()
-        return agg
-
-    def latest(self, symbol: str, interval: int = 5) -> pd.DataFrame:
-        return self.candles(symbol, interval).tail(300).reset_index(drop=True)
+            out = base
+        else:
+            if interval not in {15, 30, 60}:
+                raise ValueError("Offline mode supports 5m, 15m, 30m and 60m intervals.")
+            indexed = base.set_index("timestamp")
+            rule = f"{interval}min"
+            out = indexed.resample(rule, origin="start_day", offset="9h15min").agg({
+                "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+            }).dropna().reset_index()
+        self._interval_cache[key] = out.copy()
+        return out.copy()
 
     def news(self, symbol: str) -> list[dict[str, Any]]:
         stock = next(x for x in PRIORITY_STOCKS if x["symbol"] == symbol.upper())
@@ -86,13 +90,10 @@ class OfflineMarketStore:
             (f"{stock['name']} sees steady institutional demand", 0.35, "flows"),
             (f"{stock['name']} maintains strong operating outlook", 0.22, "earnings"),
         ]
-        negative = [
-            (f"Analysts flag near-term volatility for {stock['name']}", -0.18, "risk"),
-        ]
-        headlines = positive + negative
+        negative = [(f"Analysts flag near-term volatility for {stock['name']}", -0.18, "risk")]
         return [
             {"title": t, "sentiment": s, "impact": s, "event": e, "domain": "offline-research", "url": "#"}
-            for t, s, e in headlines
+            for t, s, e in positive + negative
         ]
 
     def news_summary(self, symbol: str) -> dict[str, Any]:
@@ -100,4 +101,11 @@ class OfflineMarketStore:
         positive = sum(1 for a in arts if a["sentiment"] > 0.15)
         negative = sum(1 for a in arts if a["sentiment"] < -0.15)
         impact = float(np.mean([a["impact"] for a in arts])) if arts else 0.0
-        return {"headline_count": len(arts), "positive": positive, "negative": negative, "neutral": len(arts)-positive-negative, "impact": round(impact, 3), "top_event": max(arts, key=lambda x: abs(x["impact"]))["event"] if arts else "none"}
+        return {
+            "headline_count": len(arts),
+            "positive": positive,
+            "negative": negative,
+            "neutral": len(arts) - positive - negative,
+            "impact": round(impact, 3),
+            "top_event": max(arts, key=lambda x: abs(x["impact"]))["event"] if arts else "none",
+        }

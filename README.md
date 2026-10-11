@@ -1,59 +1,68 @@
-# India Candle AI — AfterCode Adaptation
+# India Candle AI — AfterCode v3
 
-India Candle AI remains a stock-analysis product, but the AfterCode "Missing Update Window" requirement is now part of the product instead of a separate demo.
+India Candle AI is an AI-assisted stock-analysis application adapted to the AfterCode **Missing Update Window** challenge.
 
-## What the product does
+## Product in one sentence
 
-### 1. Market Predictor
-- Works offline with a seeded Indian-equity intraday dataset.
-- Trains a walk-forward machine-learning model on candle features.
-- Estimates next close, next high, next low and end-of-day close.
-- Produces BUY / SELL / NO-TRADE from the measured validation threshold.
-- Adds a small contextual news-impact layer from local research data.
-- Shows validation metrics instead of claiming certainty.
+**Predict the next market move, but only treat BUY/SELL as trusted when the repository environment is current and the selected model's validation evidence supports a 90% minimum signal-precision gate.**
 
-### 2. Repository Health / Missing Update Window
-- Monitors a real local source workspace.
-- Builds a content fingerprint across tracked source/config/dependency files.
-- Stores an accepted scan baseline and audit history.
-- Detects added, modified and removed files.
-- Detects dependency-file changes.
-- Scans for credential-like strings, eval/exec, shell=True, broad exception handling, debug prints and TODO/FIXME markers.
-- Marks the accepted findings **STALE** when the live repository fingerprint changes.
-- Keeps the old findings visible, but never represents them as current.
-- A new scan explicitly accepts the new fingerprint and restores a CURRENT state.
+## Core product
 
-### 3. Why this satisfies the challenge without throwing away the original product
+- Offline Indian-equity universe: RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK, SBIN, TATAMOTORS, BHARTIARTL.
+- Timeframes: 5m, 15m, 30m and 60m.
+- Historical OHLCV candles are stored locally for reproducible judging.
+- Walk-forward feature engineering and deterministic gradient-boosting models.
+- Predicts next close, high, low and end-of-day close.
+- Contextual local research/news layer.
+- Validation cards show direction accuracy, signal precision, coverage, threshold and MAE.
+- Model cache makes repeat analysis fast; recalibration explicitly rebuilds the selected model.
 
-The core problem stays: use software to produce useful stock-analysis decisions.
-The challenge adds a new invariant: **a decision is trustworthy only when the source environment that produced it is still the accepted version.**
+## 90% precision policy
 
-Therefore the repository sentinel is not a fake extra page. It is the freshness gate for the stock-analysis environment. When source code or dependency configuration changes, the previously trusted stock signal becomes REVALIDATE until the repository is rescanned.
+The product does **not** claim 90% overall market-direction accuracy. Instead, it uses a strict 90% validation precision gate for selective BUY/SELL signals. When the validation evidence cannot meet that requirement, the product abstains with **NO-TRADE**.
 
-The submission build intentionally uses a local provider and local data so it has zero API keys and zero external runtime dependencies. A future GitHub/market-data adapter can plug into the same interfaces.
+The default demo setup is **TCS / 60m**. On the packaged offline dataset its walk-forward benchmark is 79.35% direction accuracy and 91.43% selective signal precision.
+
+## AfterCode adaptation
+
+The Repository Health view monitors `workspace/monitored_repository` and provides:
+
+- SHA-256 fingerprinting of tracked source/config/dependency files.
+- Added/modified/removed file detection.
+- Dependency-change detection.
+- Security/code-quality findings.
+- Accepted baseline + audit history.
+- `CURRENT → STALE → CURRENT` state transitions.
+- A concrete overnight update simulation.
+
+If the repository changes, stock analysis can still be inspected, but the trusted signal becomes **REVALIDATE** until the repository is rescanned and accepted.
+
+## Why the application feels faster
+
+- Model fitting uses lightweight `HistGradientBoosting*` estimators.
+- Models are cached per stock/timeframe.
+- FastAPI runs analysis in a worker thread instead of blocking the request loop.
+- The frontend no longer makes redundant status calls after every analysis.
+- Repository status/history are fetched in parallel.
+- The chart is rendered locally with Canvas and no external CDN dependency.
 
 ## Run
 
 ```powershell
 python -m venv .venv
-.venv\\Scripts\\Activate.ps1
+.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m uvicorn app.main:app
 ```
 
-Open http://127.0.0.1:8000
+Open `http://127.0.0.1:8000`.
 
-## Challenge proof flow
+## Tests
 
-1. Open **Repository Health**.
-2. Click **SCAN & ACCEPT BASELINE**.
-3. Click **Market Predictor** and analyze a stock.
-4. Return to **Repository Health** and click **SIMULATE OVERNIGHT UPDATE**.
-5. The repository becomes STALE and the changed files appear.
-6. Analyze the stock again: the market calculation is shown for inspection, but the trusted signal becomes **REVALIDATE**.
-7. Click **SCAN & ACCEPT BASELINE**.
-8. The environment becomes CURRENT and a fresh stock analysis can be trusted again.
+```powershell
+pytest -q
+```
 
-## Future API integration
+## Submission position
 
-The application has a provider boundary. In a production version, a GitHub provider can replace the local repository provider, and a live market-data provider can replace the seeded market store without changing the core UI state machine.
+The competition version intentionally has no live market API keys and no GitHub token. The local provider boundaries are deliberate so the evaluator can run the full product immediately. Live market/GitHub adapters can be added later without changing the core trust/state logic.
