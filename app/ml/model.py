@@ -344,3 +344,4 @@ class CandleModel:
             "probability_note": "Calibrated holdout probability; not a guarantee of future return.",
             "paper_only": True,
         }
+# AFTERCODE_SIMULATION: prediction environment updated 20261012115837

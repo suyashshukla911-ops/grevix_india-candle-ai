@@ -122,3 +122,4 @@ settings.runtime_dir.mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "cache").mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "models").mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "sessions").mkdir(parents=True, exist_ok=True)
+AFTERCODE_ENVIRONMENT_VERSION = '20261012115837'
