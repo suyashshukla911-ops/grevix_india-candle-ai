@@ -110,9 +110,9 @@ def bootstrap(request: Request):
     }
 
 @app.get("/api/health")
-def health(request: Request):
-    rm=repo_for(request)
-    return {"ok":True,"market":"ready","repository":rm.scan(False,record_audit=False)["state"],"catalog":market.catalog_status(False)}
+def health():
+    # Render calls this during startup; keep it cheap and deterministic.
+    return {"ok": True, "service": "india-candle-ai", "status": "ready"}
 
 @app.get("/api/stocks/search")
 def search(q:str=Query("",max_length=120),limit:int=Query(30,ge=1,le=100)):

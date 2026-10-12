@@ -1,6 +1,6 @@
 {
   "accepted": {
-    "fingerprint": "8d3dc2b92e9d2feaf5479baa678c00f59038097a367f6a713c100d3c3b838c4c",
+    "fingerprint": "812ca6e3ad77688be7e51ee667615cbb05c6582e9b7c8997e4c7f738b031df4e",
     "files": {
       ".env": {
         "sha256": "ac92f23464710c027d551bc6780f96025247ccb719ed68f512a23a5247ee16e9",
@@ -43,13 +43,18 @@
         "component": "docs"
       },
       "Dockerfile": {
-        "sha256": "41ab3db68e559aa3216a4217588ac34958b0cef2db69ec7b973ca431e0da1ce4",
-        "size": 254,
+        "sha256": "1960b803eeff2f2562b3e2f5fe1205f458d4a9274ff0ada0e9740af231293137",
+        "size": 315,
         "component": "config"
       },
       "ENHANCEMENTS.md": {
         "sha256": "bebcdca90ca651bc02e0e6011692173b3f6074467c870e2f8f64a9b23dc801a4",
         "size": 1558,
+        "component": "docs"
+      },
+      "FINAL_HOTFIX.md": {
+        "sha256": "12a57fcc214af16d7dbbdae27682cfce7d37e503b69429fbb9b2641ecf0a213b",
+        "size": 1263,
         "component": "docs"
       },
       "FINAL_REMEDIATION_REPORT.pdf": {
@@ -93,8 +98,8 @@
         "component": "docs"
       },
       "render.yaml": {
-        "sha256": "0a33fbe9bbadc42089ef3673b92013acec8dcf88b62a9613af3c438516fda551",
-        "size": 935,
+        "sha256": "1cefdda7c61614fb25698f91b2973620d9abd8f13f82986b3e53f50dbc3451af",
+        "size": 925,
         "component": "config"
       },
       "requirements-dev.txt": {
@@ -103,8 +108,8 @@
         "component": "dependencies"
       },
       "requirements.txt": {
-        "sha256": "806ee5f1d9f9f9e49e8b7fa5a32209185dfea3c357d15661e83713f65dc0ccea",
-        "size": 219,
+        "sha256": "9e0cdfefc7f2d2ea11d15a2deba80806e4036680ff5ff6fca220c3161d52987e",
+        "size": 310,
         "component": "dependencies"
       },
       "SECURITY.md": {
@@ -128,18 +133,18 @@
         "component": "docs"
       },
       "VERSION.txt": {
-        "sha256": "fef2206ba52c3cf19953d0857da13f0bdf8b223909d4526ebf8b340fcf1f2acb",
-        "size": 27,
+        "sha256": "00ffdfb59ab6bfc546dfad075baf58583b744979fd08e320172b9f9d22027063",
+        "size": 20,
         "component": "docs"
       },
       "app/config.py": {
-        "sha256": "9a681f688f937dd2f819c056eded17629d82c346255a3a48cf586829a81272bb",
-        "size": 6495,
+        "sha256": "8f57a41d44f4824e41072478821502292f5e0fc26a78845d40fdb678f71213a6",
+        "size": 6552,
         "component": "config"
       },
       "app/main.py": {
-        "sha256": "ecab0da68e27bc51f5121bac24dc7cb53c4bec6ce9de3d180166d2a2412f018a",
-        "size": 10145,
+        "sha256": "d068966cd1d939e7616bdd856c1439e961d49356513c389a5ee0d1a2efef0aa5",
+        "size": 10115,
         "component": "other"
       },
       "app/__init__.py": {
@@ -168,8 +173,8 @@
         "component": "data"
       },
       "app/data/yahoo.py": {
-        "sha256": "b210eb2dc5f6a2a30907894df992503bc4e349ed5b06d0173c88d0e1b18e1a2a",
-        "size": 20826,
+        "sha256": "6b7a35fde110ae3f4605372ed39fdd49274312d9e17bd9ecffa3f3103e8b232d",
+        "size": 21383,
         "component": "data"
       },
       "app/data/__init__.py": {
@@ -263,8 +268,8 @@
         "component": "model"
       },
       "app/ml/model.py": {
-        "sha256": "91b045e9e3e479543748b6896192df8fff2db4ebe96038a53e85df66fb3f4640",
-        "size": 16064,
+        "sha256": "31b6a29a44d92b9a61db42b9a04565b458fc93f272ad0145b0d80740de2453ce",
+        "size": 16481,
         "component": "model"
       },
       "app/ml/__init__.py": {
@@ -372,6 +377,11 @@
         "size": 1768,
         "component": "other"
       },
+      "tests/test_yahoo_history_regression.py": {
+        "sha256": "286e66a0911a5413acff2481aa44fffb82e47d42301c9a64171b93fb2898e51a",
+        "size": 913,
+        "component": "other"
+      },
       "tests/test_yahoo_quotes.py": {
         "sha256": "efbd8b3db7eb9c3d18bc894d975bcc42e40394c8cf82f81eb920beb48817f703",
         "size": 1941,
@@ -409,16 +419,16 @@
       }
     },
     "components": {
-      "config": "d33a323a7abe7aa78938afd446e0d9f88b690db298e39cc64ba0f31fb3e5873c",
-      "other": "266d96c7a3dff5be28b08a5d78681c7698d238183eec125c95967430aab0a091",
-      "docs": "dfdb88cd9b5950e510d5f7d04b625461bba2460e94804386d4909619b81e28f7",
-      "dependencies": "cb8617f27c5503d001c77ccb78be70e6bc48ffad9cbbcb060eb9bb6c97108e65",
-      "data": "79927972ece58e5e3fd5c40e1096a4073905f50997c9b5677312b9ebf50448d9",
-      "model": "f9838ae9dba67908b3add024fe1082360d1a4a45d2b4a2a30b527ea50b7619ae",
+      "config": "4a9e18e7e0b8b5ecccd376c31903ac73a93c97005d6a0776391acecbea1a3324",
+      "other": "dadd8924c9b0ad191fdd59a551a14f1d2887b11fe2bd2420c93a38de30f90703",
+      "docs": "c52ba74fa7b7cdb39b0ba29d646e50faf9b46dc7fe390272291e17d3fdf4ab75",
+      "dependencies": "b20cd39b8721166174889090f55fe0c10aeb775af767da9157196c70edbc7f69",
+      "data": "bf75b2f7e270cf1c90ac3ae672de385bacdf2007ec3be08d4a4008e72109fe59",
+      "model": "a85ca08bc25ee60d2100aa04a19882654488429e58f9785e3ba3b8e3801d80d3",
       "services": "e3840753452170f9843b33e8e15bf26462641570c63eeda6bc9369f174053e72",
       "frontend": "1dcb19cd567ea15c076822a78dac32d79dad3f723dc9279246aef9c244354166"
     },
-    "generated_at": "2026-10-12T11:58:35.352004+05:30",
+    "generated_at": "2026-10-12T12:35:13.560507+05:30",
     "path": "C:\\Users\\Suyash Shukla\\Desktop\\india_candle_ai"
   },
   "accepted_findings": [
@@ -429,20 +439,10 @@
       "file": "app\\services\\repository.py",
       "line": 285,
       "source": "pattern",
-      "accepted_baseline": true,
-      "blocking": false
-    },
-    {
-      "severity": "HIGH",
-      "rule": "dependency/PYSEC-2026-1845",
-      "message": "Installed dependency pytest 8.4.2 has a reported vulnerability.",
-      "file": "requirements.txt",
-      "line": 0,
-      "source": "pip-audit",
-      "accepted_baseline": true,
+      "accepted_baseline": false,
       "blocking": false
     }
   ],
-  "accepted_at": "2026-10-12T11:58:35.384255+05:30",
+  "accepted_at": "2026-10-12T12:35:13.560595+05:30",
   "scope": "model"
 }

@@ -112,7 +112,7 @@ class Settings:
             max_clone_mb=int(os.getenv("MAX_CLONE_MB", "150")),
             max_clones=int(os.getenv("MAX_CLONES", "3")),
             auth_enabled=os.getenv("AUTH_ENABLED", "true").lower() == "true",
-            admin_password=os.getenv("ADMIN_PASSWORD", "change-me"),
+            admin_password=os.getenv("ADMIN_PASSWORD", "change-me").strip(),
             github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
             model_artifact_key=os.getenv("MODEL_ARTIFACT_KEY", ""),
         )
@@ -122,4 +122,4 @@ settings.runtime_dir.mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "cache").mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "models").mkdir(parents=True, exist_ok=True)
 (settings.runtime_dir / "sessions").mkdir(parents=True, exist_ok=True)
-AFTERCODE_ENVIRONMENT_VERSION = '20261012115837'
+AFTERCODE_ENVIRONMENT_VERSION = '20261012123515'

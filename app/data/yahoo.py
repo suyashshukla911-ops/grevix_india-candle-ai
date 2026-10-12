@@ -156,24 +156,31 @@ class YahooProvider:
     def _download_chart_endpoint(self,symbol,interval,days)->Optional[pd.DataFrame]:
         yf_interval=_INTERVAL_MAP.get(interval,interval)
         range_days=min(max(days,5),_MAX_DAYS.get(interval,days))
-        url=f"https://query1.finance.yahoo.com/v8/finance/chart/{quote_plus(symbol)}?range={range_days}d&interval={yf_interval}&includePrePost=false&events=history"
-        try:
-            r=_SESSION.get(url,timeout=min(settings.data_timeout_seconds,6))
-            r.raise_for_status()
-            payload=r.json()
-            result=(payload.get("chart") or {}).get("result") or []
-            if not result: return None
-            result=result[0]
-            ts=result.get("timestamp") or []
-            q=((result.get("indicators") or {}).get("quote") or [{}])[0]
-            if not ts: return None
-            return self._clean(pd.DataFrame({
-                "timestamp":pd.to_datetime(ts,unit="s",utc=True).tz_convert(IST),
-                "open":q.get("open",[]),"high":q.get("high",[]),"low":q.get("low",[]),
-                "close":q.get("close",[]),"volume":q.get("volume",[]),
-            }))
-        except Exception:
-            return None
+        urls=[
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote_plus(symbol)}?range={range_days}d&interval={yf_interval}&includePrePost=false&events=history",
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{quote_plus(symbol)}?range={range_days}d&interval={yf_interval}&includePrePost=false&events=history",
+        ]
+        for url in urls:
+            try:
+                r=_SESSION.get(url,timeout=min(settings.data_timeout_seconds,6))
+                r.raise_for_status()
+                payload=r.json()
+                result=(payload.get("chart") or {}).get("result") or []
+                if not result:
+                    continue
+                result=result[0]
+                ts=result.get("timestamp") or []
+                q=((result.get("indicators") or {}).get("quote") or [{}])[0]
+                if not ts:
+                    continue
+                return self._clean(pd.DataFrame({
+                    "timestamp":pd.to_datetime(ts,unit="s",utc=True).tz_convert(IST),
+                    "open":q.get("open",[]),"high":q.get("high",[]),"low":q.get("low",[]),
+                    "close":q.get("close",[]),"volume":q.get("volume",[]),
+                }))
+            except Exception:
+                continue
+        return None
 
     def _download_yfinance(self,symbol,interval,days)->Optional[pd.DataFrame]:
         if yf is None: return None
@@ -247,7 +254,11 @@ class YahooProvider:
 
             frame=None
             if self._live_allowed(candidate,interval):
-                frame=self._download_chart_endpoint(candidate,interval,effective_days) or self._download_yfinance(candidate,interval,effective_days)
+                frame=self._download_chart_endpoint(candidate,interval,effective_days)
+                # Never use Python's truth-value evaluation on a DataFrame.
+                # ``df or other`` raises "The truth value of a DataFrame is ambiguous".
+                if frame is None:
+                    frame=self._download_yfinance(candidate,interval,effective_days)
             if frame is not None and len(frame)>=30:
                 self._write_cache(candidate,interval,effective_days,frame)
                 latest=frame["timestamp"].iloc[-1]
